@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Something of Isaac — Guess the Item</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark"></div>
+          <div>
+            <div class="brand-name">SOMETHING<span class="accent"> OF ISAAC</span></div>
+            <div class="brand-sub" id="brand-sub"></div>
+          </div>
+        </div>
+        <div class="icon-row">
+          <button class="iconbtn" id="btn-stats" title="Stats" aria-label="Stats">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="6" y1="20" x2="6" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="18" y1="20" x2="18" y2="14" />
+            </svg>
+          </button>
+          <button class="iconbtn" id="btn-help" title="How to play" aria-label="Help">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M9.5 9a2.5 2.5 0 1 1 4 2c-.8.8-1.5 1-1.5 2" />
+              <circle cx="12" cy="17" r="0.6" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="meta">
+        <div>HINTS <span class="seed" id="hints-count">1/7</span></div>
+        <div class="timer" id="utc-clock"></div>
+        <div>ATTEMPTS <span class="seed" id="attempt-count">0</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">▸ GUESS THE ITEM</div>
+          <div class="score-pill" id="puzzle-number">PUZZLE #—</div>
+        </div>
+
+        <div class="hero-frame" id="hero-frame">
+          <div class="blind">?</div>
+        </div>
+
+        <div class="hints" id="hints"></div>
+
+        <div class="hint-help" id="hint-help">
+          Each wrong guess unlocks the next hint.
+        </div>
+
+        <div class="guess-row">
+          <input
+            id="guess-input"
+            type="text"
+            class="guess-input"
+            placeholder="Type an item, pickup quote, or effect…"
+            role="combobox"
+            aria-expanded="false"
+            aria-controls="guess-listbox"
+            aria-autocomplete="list"
+            inputmode="search"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <button class="guess-btn" id="guess-submit" type="button">GUESS</button>
+          <ul id="guess-listbox" class="autocomplete" role="listbox" hidden></ul>
+        </div>
+
+        <div class="wrong-log" id="guess-history"></div>
+      </div>
+
+      <div class="footer">A NEW ITEM EVERY DAY · RESETS AT MIDNIGHT UTC</div>
+    </div>
+
+    <div id="modal-root"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

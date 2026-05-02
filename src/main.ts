@@ -1,0 +1,493 @@
+/**
+ * Entry point. Loads data, resolves today's puzzle, hooks up the UI.
+ *
+ * URL params:
+ *   ?puzzle=N — override today's puzzle (for QA / archive mode).
+ */
+
+import { generateHints, HINT_COUNT, type Item } from "./hints.ts";
+import { applyGuess, fromProgress, newGame, score, toProgress } from "./game.ts";
+import type { GameState } from "./game.ts";
+import { getPuzzleNumber, getEntryForPuzzle, type Schedule } from "./puzzle.ts";
+import { loadProgress, saveProgress, recordResult, loadStats, type Stats } from "./storage.ts";
+import { attachAutocomplete, indexItems, type Searchable } from "./ui/autocomplete.ts";
+import { renderBoard, renderGuessList } from "./ui/board.ts";
+import { copyToClipboard, shareString } from "./share.ts";
+
+async function loadJSON<T>(path: string): Promise<T> {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`failed to load ${path}: ${res.status}`);
+  return res.json();
+}
+
+function $(id: string): HTMLElement {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`missing #${id}`);
+  return el;
+}
+
+function formatBrandSub(): string {
+  const now = new Date();
+  return now
+    .toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })
+    .toUpperCase();
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = Math.floor(seconds % 60).toString().padStart(2, "0");
+  return `⏱ ${m}:${s}`;
+}
+
+/**
+ * Counts up active wall-clock seconds while the page is open and the
+ * game is in progress. Pauses on tab hide and on win/loss. Persists
+ * the running total into Progress so a reload resumes from the same
+ * point — leaving the tab open overnight does not inflate the timer.
+ */
+function startElapsedTimer(
+  el: HTMLElement,
+  state: { activeSeconds: number; phase: string },
+  onTick: () => void,
+): () => void {
+  el.textContent = formatElapsed(state.activeSeconds);
+  let id: number | null = null;
+  const tick = () => {
+    if (state.phase !== "guessing") return;
+    if (document.hidden) return;
+    state.activeSeconds += 1;
+    el.textContent = formatElapsed(state.activeSeconds);
+    onTick();
+  };
+  const start = () => {
+    if (id !== null) return;
+    if (state.phase !== "guessing") return;
+    id = window.setInterval(tick, 1000);
+  };
+  const stop = () => {
+    if (id === null) return;
+    clearInterval(id);
+    id = null;
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stop();
+    else start();
+  });
+  start();
+  return stop;
+}
+
+function renderHero(frame: HTMLElement, state: GameState) {
+  frame.replaceChildren();
+  if (state.phase === "guessing") {
+    const blind = document.createElement("div");
+    blind.className = "blind";
+    blind.textContent = "?";
+    frame.appendChild(blind);
+    return;
+  }
+  // Reveal sprite on win/loss.
+  if (state.answer.img) {
+    const img = document.createElement("img");
+    img.className = "item-sprite";
+    img.src = state.answer.img;
+    img.alt = state.answer.name;
+    img.loading = "eager";
+    frame.appendChild(img);
+  } else {
+    const blind = document.createElement("div");
+    blind.className = "blind";
+    blind.textContent = state.phase === "won" ? "✓" : "✗";
+    frame.appendChild(blind);
+  }
+}
+
+function renderHintHelp(el: HTMLElement, state: GameState) {
+  if (state.phase === "won") el.textContent = "You got it.";
+  else if (state.phase === "lost")
+    el.textContent = "Game over — the answer is revealed above.";
+  else el.textContent = "Each wrong guess unlocks the next hint.";
+}
+
+function nextResetCountdown(): string {
+  const now = new Date();
+  const utcEnd = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+  );
+  const ms = utcEnd - now.getTime();
+  const h = String(Math.floor(ms / 3_600_000)).padStart(2, "0");
+  const m = String(Math.floor((ms % 3_600_000) / 60_000)).padStart(2, "0");
+  const s = String(Math.floor((ms % 60_000) / 1000)).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+function buildShareString(state: GameState): string {
+  return shareString({
+    won: state.phase === "won",
+    hintsUsed: state.hintsRevealed,
+    guessCount: state.guessIds.length,
+    activeSeconds: state.activeSeconds,
+  });
+}
+
+function showResultModal(state: GameState, quotes: Record<number, string>, stats: Stats) {
+  const root = $("modal-root");
+  root.replaceChildren();
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.addEventListener("click", () => root.replaceChildren());
+
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.addEventListener("click", (e) => e.stopPropagation());
+
+  const close = document.createElement("button");
+  close.className = "modal-close";
+  close.textContent = "✕";
+  close.setAttribute("aria-label", "Close");
+  close.addEventListener("click", () => root.replaceChildren());
+  modal.appendChild(close);
+
+  const title = document.createElement("div");
+  title.className = "modal-title" + (state.phase === "won" ? " win" : "");
+  title.textContent = state.phase === "won" ? "FOUND IT" : "DEFEATED";
+  modal.appendChild(title);
+
+  const sub = document.createElement("div");
+  sub.className = "modal-sub";
+  const timeStr = formatElapsed(state.activeSeconds).replace("⏱ ", "");
+  if (state.phase === "won") {
+    sub.textContent = `${state.hintsRevealed} hint${state.hintsRevealed === 1 ? "" : "s"} · ${state.guessIds.length} ${state.guessIds.length === 1 ? "try" : "tries"} · ${timeStr}`;
+  } else {
+    sub.textContent = `The answer escaped you · ${timeStr}`;
+  }
+  modal.appendChild(sub);
+
+  const answer = document.createElement("div");
+  answer.className = "modal-answer";
+  if (state.answer.img) {
+    const img = document.createElement("img");
+    img.className = "item-sprite";
+    img.src = state.answer.img;
+    img.alt = state.answer.name;
+    answer.appendChild(img);
+  }
+  const ansName = document.createElement("div");
+  ansName.className = "ans-name";
+  ansName.textContent = state.answer.name.toUpperCase();
+  answer.appendChild(ansName);
+  const quote = quotes[state.answer.id];
+  if (quote) {
+    const flavor = document.createElement("div");
+    flavor.className = "ans-flavor";
+    flavor.textContent = `"${quote}"`;
+    answer.appendChild(flavor);
+  }
+  modal.appendChild(answer);
+
+  const share = document.createElement("div");
+  share.className = "share-block";
+  share.textContent = buildShareString(state);
+  modal.appendChild(share);
+
+  const btns = document.createElement("div");
+  btns.className = "modal-btns";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "btn btn-primary";
+  copyBtn.textContent = "COPY SHARE";
+  copyBtn.addEventListener("click", async () => {
+    const ok = await copyToClipboard(share.textContent ?? "");
+    copyBtn.textContent = ok ? "COPIED ✓" : "COPY FAILED";
+    setTimeout(() => (copyBtn.textContent = "COPY SHARE"), 1600);
+  });
+  btns.appendChild(copyBtn);
+
+  const statsBtn = document.createElement("button");
+  statsBtn.className = "btn btn-secondary";
+  statsBtn.textContent = "STATS";
+  statsBtn.addEventListener("click", () => {
+    root.replaceChildren();
+    showStatsPopover(loadStats());
+  });
+  btns.appendChild(statsBtn);
+
+  modal.appendChild(btns);
+
+  const next = document.createElement("div");
+  next.className = "next-room";
+  const updateNext = () => (next.textContent = `NEXT ITEM IN ${nextResetCountdown()}`);
+  updateNext();
+  const id = setInterval(updateNext, 1000);
+  bg.addEventListener("click", () => clearInterval(id));
+  modal.appendChild(next);
+
+  bg.appendChild(modal);
+  root.appendChild(bg);
+
+  void stats;
+}
+
+function showHelpModal() {
+  const root = $("modal-root");
+  root.replaceChildren();
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.addEventListener("click", () => root.replaceChildren());
+
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.addEventListener("click", (e) => e.stopPropagation());
+
+  const close = document.createElement("button");
+  close.className = "modal-close";
+  close.textContent = "✕";
+  close.setAttribute("aria-label", "Close");
+  close.addEventListener("click", () => root.replaceChildren());
+  modal.appendChild(close);
+
+  const title = document.createElement("div");
+  title.className = "modal-title";
+  title.textContent = "HOW TO PLAY";
+  modal.appendChild(title);
+
+  const sub = document.createElement("div");
+  sub.className = "modal-sub";
+  sub.textContent = "Guess the daily item with the fewest hints.";
+  modal.appendChild(sub);
+
+  const list = document.createElement("ul");
+  list.style.textAlign = "left";
+  list.style.lineHeight = "1.5";
+  list.style.fontSize = "14px";
+  list.style.color = "var(--ink)";
+  list.style.padding = "0 4px 0 22px";
+  list.style.margin = "0 0 18px";
+  for (const txt of [
+    "You start with one hint visible.",
+    "Type a guess — name, pickup quote, or effect all match.",
+    "Each wrong guess unlocks the next hint.",
+    "After 7 hints, if you still miss, the game is over.",
+    "Lower hints used + fewer tries = better score.",
+  ]) {
+    const li = document.createElement("li");
+    li.textContent = txt;
+    list.appendChild(li);
+  }
+  modal.appendChild(list);
+
+  const btns = document.createElement("div");
+  btns.className = "modal-btns";
+  const ok = document.createElement("button");
+  ok.className = "btn btn-primary";
+  ok.textContent = "GOT IT";
+  ok.addEventListener("click", () => root.replaceChildren());
+  btns.appendChild(ok);
+  modal.appendChild(btns);
+
+  bg.appendChild(modal);
+  root.appendChild(bg);
+}
+
+function showStatsPopover(stats: Stats) {
+  const root = $("modal-root");
+  root.replaceChildren();
+
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.addEventListener("click", () => root.replaceChildren());
+
+  const pop = document.createElement("div");
+  pop.className = "stats-pop";
+  pop.style.position = "static";
+  pop.style.width = "100%";
+  pop.style.maxWidth = "300px";
+  pop.addEventListener("click", (e) => e.stopPropagation());
+
+  const title = document.createElement("div");
+  title.className = "stats-title";
+  title.textContent = "▸ STATS";
+  pop.appendChild(title);
+
+  const wins = stats.won;
+  const totalHints = stats.history.filter((h) => h.won).reduce((a, h) => a + h.hintsUsed, 0);
+  const totalAttempts = stats.history.filter((h) => h.won).reduce((a, h) => a + h.guesses, 0);
+  const rows: Array<[string, string | number]> = [
+    ["Played", stats.played],
+    ["Wins", wins],
+    ["Streak", stats.currentStreak],
+    ["Best Streak", stats.bestStreak],
+    ["Avg hints", wins ? (totalHints / wins).toFixed(1) : "—"],
+    ["Avg tries", wins ? (totalAttempts / wins).toFixed(1) : "—"],
+  ];
+  for (const [k, v] of rows) {
+    const r = document.createElement("div");
+    r.className = "stat-row";
+    const label = document.createElement("span");
+    label.textContent = k;
+    const val = document.createElement("span");
+    val.className = "v";
+    val.textContent = String(v);
+    r.append(label, val);
+    pop.appendChild(r);
+  }
+
+  const closeRow = document.createElement("div");
+  closeRow.style.marginTop = "12px";
+  closeRow.style.textAlign = "right";
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "btn btn-secondary";
+  closeBtn.style.fontSize = "14px";
+  closeBtn.style.padding = "6px 12px";
+  closeBtn.textContent = "CLOSE";
+  closeBtn.addEventListener("click", () => root.replaceChildren());
+  closeRow.appendChild(closeBtn);
+  pop.appendChild(closeRow);
+
+  bg.appendChild(pop);
+  root.appendChild(bg);
+}
+
+async function main() {
+  const params = new URLSearchParams(location.search);
+  const puzzleOverride = Number(params.get("puzzle"));
+
+  const [items, quotes, schedule] = await Promise.all([
+    loadJSON<Item[]>(import.meta.env.BASE_URL + "data/items.json"),
+    loadJSON<Record<number, string>>(import.meta.env.BASE_URL + "data/quotes.json"),
+    loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
+  ]);
+
+  const puzzleNumber =
+    Number.isFinite(puzzleOverride) && puzzleOverride > 0
+      ? puzzleOverride
+      : getPuzzleNumber();
+  const entry = getEntryForPuzzle(schedule, puzzleNumber);
+  if (!entry) {
+    document.body.innerHTML = `<div class="app"><h1>No puzzle for #${puzzleNumber}</h1><p>The schedule covers ${schedule.entries.length} days. Come back tomorrow.</p></div>`;
+    return;
+  }
+  const answer = items.find((it) => it.id === entry.itemId);
+  if (!answer) {
+    document.body.innerHTML = `<div class="app"><h1>Item missing</h1></div>`;
+    return;
+  }
+
+  const indexed = indexItems(items, quotes);
+  const existing = loadProgress(puzzleNumber);
+  const state: GameState = existing
+    ? fromProgress(existing, answer)
+    : newGame(puzzleNumber, answer);
+  saveProgress(toProgress(state));
+
+  $("brand-sub").textContent = formatBrandSub();
+  $("puzzle-number").textContent = `PUZZLE #${puzzleNumber}`;
+  const stopTimer = startElapsedTimer($("utc-clock"), state, () => {
+    // Persist active-time on each tick so a reload resumes from the same point.
+    saveProgress(toProgress(state));
+  });
+
+  const hints = generateHints(answer, quotes[answer.id]);
+  const board = $("hints");
+  const heroFrame = $("hero-frame");
+  const hintHelp = $("hint-help");
+  const guessHistory = $("guess-history");
+  const hintsCount = $("hints-count");
+  const attemptCount = $("attempt-count");
+
+  const input = $("guess-input") as HTMLInputElement;
+  const listbox = $("guess-listbox") as HTMLUListElement;
+  const submit = $("guess-submit") as HTMLButtonElement;
+
+  let pendingItem: Searchable | null = null;
+
+  function syncSubmitState() {
+    if (state.phase !== "guessing") {
+      submit.disabled = true;
+      return;
+    }
+    submit.disabled = pendingItem == null;
+  }
+
+  function refresh() {
+    renderBoard(board, hints, state.hintsRevealed);
+    renderHero(heroFrame, state);
+    renderHintHelp(hintHelp, state);
+    renderGuessList(
+      guessHistory,
+      state.guessIds.map((id) => ({
+        id,
+        name: items.find((it) => it.id === id)?.name ?? `#${id}`,
+      })),
+    );
+    hintsCount.textContent = `${state.hintsRevealed}/${HINT_COUNT}`;
+    attemptCount.textContent = String(state.guessIds.length);
+    if (state.phase !== "guessing") {
+      input.disabled = true;
+    }
+    syncSubmitState();
+  }
+  refresh();
+
+  attachAutocomplete({
+    input,
+    listbox,
+    items: indexed,
+    onSelect: (item) => {
+      pendingItem = item;
+      syncSubmitState();
+    },
+  });
+
+  function commitGuess() {
+    if (state.phase !== "guessing") return;
+    if (!pendingItem) return;
+    const outcome = applyGuess(state, pendingItem.id);
+    if (outcome === "ignored") return;
+    saveProgress(toProgress(state));
+    input.value = "";
+    pendingItem = null;
+    refresh();
+    if (state.phase !== "guessing") finalize();
+  }
+
+  function finalize() {
+    stopTimer();
+    const stats = recordResult(
+      {
+        puzzleNumber: state.puzzleNumber,
+        won: state.phase === "won",
+        hintsUsed: state.hintsRevealed,
+        guesses: state.guessIds.length,
+        finishedAt: state.finishedAt ?? Date.now(),
+        activeSeconds: state.activeSeconds,
+      },
+      state.puzzleNumber,
+    );
+    showResultModal(state, quotes, stats);
+  }
+
+  submit.addEventListener("click", commitGuess);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && listbox.hidden) commitGuess();
+  });
+
+  $("btn-help").addEventListener("click", showHelpModal);
+  $("btn-stats").addEventListener("click", () => showStatsPopover(loadStats()));
+
+  // If they reload into a finished puzzle, jump right to the result.
+  if (state.phase !== "guessing") finalize();
+
+  void score; // imported for future use (already factored into hintsUsed)
+}
+
+main().catch((e) => {
+  console.error(e);
+  document.body.innerHTML = `<div class="app"><h1>Boot error</h1><pre>${String(e)}</pre></div>`;
+});
