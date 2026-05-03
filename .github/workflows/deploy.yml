@@ -1,9 +1,28 @@
+# Push to `main`: build + deploy GitHub Pages only (avelouk.github.io/something-of-isaac/).
+#
+# Production (Quartz): Actions → this workflow → Run workflow → enable “Sync to production”.
+#
+# Quartz: put build output under content/something-of-isaac/ (not public/). Quartz Assets copies
+# non-.md files from content/ → public/ on each build, so the live URL is /something-of-isaac/.
+# Do not add .md files in that folder.
+#
+# GitHub → Settings → Actions:
+#   Secret:  SYNC_GITHUB_TOKEN (contents write on target repo)
+#   Variables: SYNC_TARGET_REPO, SYNC_TARGET_BRANCH, optional SYNC_TARGET_DIR
+#
+# Defaults: SYNC_TARGET_DIR = content/something-of-isaac, branch = main (override e.g. v4).
+
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sync_production:
+        description: "Mirror dist to Quartz repo (avelouk.com)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,6 +44,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -39,3 +62,40 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  sync-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ vars.SYNC_TARGET_REPO != '' && github.event_name == 'workflow_dispatch' && inputs.sync_production }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Mirror dist into target repository
+        env:
+          TOKEN: ${{ secrets.SYNC_GITHUB_TOKEN }}
+          REPO: ${{ vars.SYNC_TARGET_REPO }}
+          TARGET_DIR: ${{ vars.SYNC_TARGET_DIR || 'content/something-of-isaac' }}
+          BRANCH: ${{ vars.SYNC_TARGET_BRANCH || 'main' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "SYNC_GITHUB_TOKEN secret is required when SYNC_TARGET_REPO is set."
+            exit 1
+          fi
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git clone --branch "$BRANCH" --single-branch "https://x-access-token:${TOKEN}@github.com/${REPO}.git" main-site
+          cd main-site
+          rm -rf "$TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
+          cp -r ../dist/. "$TARGET_DIR/"
+          git add "$TARGET_DIR"
+          if git diff --staged --quiet; then
+            echo "No file changes; skipping commit."
+            exit 0
+          fi
+          git commit -m "Publish something-of-isaac (${GITHUB_SHA})"
+          git push origin "HEAD:${BRANCH}"
