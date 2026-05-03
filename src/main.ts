@@ -6,13 +6,22 @@
  */
 
 import { generateHints, HINT_COUNT, type Item } from "./hints.ts";
-import { applyGuess, fromProgress, newGame, toProgress } from "./game.ts";
+import {
+  applyFinalChoice,
+  applyGuess,
+  fromProgress,
+  isFinished,
+  isPlaying,
+  newGame,
+  toProgress,
+} from "./game.ts";
 import type { GameState } from "./game.ts";
 import { getPuzzleNumber, getEntryForPuzzle, type Schedule } from "./puzzle.ts";
 import { loadProgress, saveProgress, recordResult, loadStats, type Stats } from "./storage.ts";
 import { attachAutocomplete, indexItems, type Searchable } from "./ui/autocomplete.ts";
 import { renderBoard, renderGuessList } from "./ui/board.ts";
 import { copyToClipboard, shareString } from "./share.ts";
+import { pickFinalChoices } from "./finalChoice.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -56,8 +65,9 @@ function startElapsedTimer(
 ): () => void {
   el.textContent = formatElapsed(state.activeSeconds);
   let id: number | null = null;
+  const playing = () => state.phase === "guessing" || state.phase === "multipleChoice";
   const tick = () => {
-    if (state.phase !== "guessing") return;
+    if (!playing()) return;
     if (document.hidden) return;
     state.activeSeconds += 1;
     el.textContent = formatElapsed(state.activeSeconds);
@@ -65,7 +75,7 @@ function startElapsedTimer(
   };
   const start = () => {
     if (id !== null) return;
-    if (state.phase !== "guessing") return;
+    if (!playing()) return;
     id = window.setInterval(tick, 1000);
   };
   const stop = () => {
@@ -83,11 +93,18 @@ function startElapsedTimer(
 
 function renderHero(frame: HTMLElement, state: GameState) {
   frame.replaceChildren();
-  if (state.phase === "guessing") {
-    const blind = document.createElement("div");
-    blind.className = "blind";
-    blind.textContent = "?";
-    frame.appendChild(blind);
+  if (isPlaying(state)) {
+    const wrap = document.createElement("div");
+    wrap.className = "blind blind-mystery";
+    const img = document.createElement("img");
+    img.className = "blind-icon";
+    img.src = import.meta.env.BASE_URL + "img/questionmark.png";
+    img.alt = "Unknown item";
+    img.width = 32;
+    img.height = 32;
+    img.decoding = "async";
+    wrap.appendChild(img);
+    frame.appendChild(wrap);
     return;
   }
   // Reveal sprite on win/loss.
@@ -100,7 +117,7 @@ function renderHero(frame: HTMLElement, state: GameState) {
     frame.appendChild(img);
   } else {
     const blind = document.createElement("div");
-    blind.className = "blind";
+    blind.className = "blind blind-outcome";
     blind.textContent = state.phase === "won" ? "✓" : "✗";
     frame.appendChild(blind);
   }
@@ -110,6 +127,8 @@ function renderHintHelp(el: HTMLElement, state: GameState) {
   if (state.phase === "won") el.textContent = "You got it.";
   else if (state.phase === "lost")
     el.textContent = "Game over — the answer is revealed above.";
+  else if (state.phase === "multipleChoice")
+    el.textContent = "Final round — pick the right item. One wrong choice ends it.";
   else el.textContent = "Each wrong guess unlocks the next hint.";
 }
 
@@ -133,6 +152,7 @@ function buildShareString(state: GameState): string {
     hintsUsed: state.hintsRevealed,
     guessCount: state.guessIds.length,
     activeSeconds: state.activeSeconds,
+    usedFinalChoice: state.usedFinalChoice,
   });
 }
 
@@ -292,7 +312,7 @@ function showHelpModal() {
     "You start with one hint visible.",
     "Type a guess — name, pickup quote, or effect all match.",
     "Each wrong guess unlocks the next hint.",
-    "After 7 hints, if you still miss, the game is over.",
+    "After 6 hints, you fall into a 4-option final round. One wrong pick ends it.",
     "Lower hints used + fewer tries = better score.",
   ]) {
     const li = document.createElement("li");
@@ -421,6 +441,8 @@ async function main() {
   const attemptCount = $("attempt-count");
   const btnViewResults = $("btn-view-results") as HTMLButtonElement;
 
+  const guessRow = $("guess-row");
+  const finalChoiceEl = $("final-choice");
   const input = $("guess-input") as HTMLInputElement;
   const listbox = $("guess-listbox") as HTMLUListElement;
   const submit = $("guess-submit") as HTMLButtonElement;
@@ -433,6 +455,36 @@ async function main() {
       return;
     }
     submit.disabled = pendingItem == null;
+  }
+
+  function renderFinalChoice() {
+    finalChoiceEl.replaceChildren();
+    if (state.phase !== "multipleChoice") {
+      finalChoiceEl.hidden = true;
+      return;
+    }
+    const tiles = pickFinalChoices(state.answer, items, state.guessIds, state.puzzleNumber);
+    for (const it of tiles) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "fc-tile";
+      btn.setAttribute("aria-label", it.name);
+      if (it.img) {
+        const img = document.createElement("img");
+        img.src = it.img;
+        img.alt = "";
+        img.loading = "eager";
+        img.className = "fc-sprite";
+        btn.appendChild(img);
+      }
+      const name = document.createElement("div");
+      name.className = "fc-name";
+      name.textContent = it.name;
+      btn.appendChild(name);
+      btn.addEventListener("click", () => commitFinalChoice(it));
+      finalChoiceEl.appendChild(btn);
+    }
+    finalChoiceEl.hidden = false;
   }
 
   function refresh() {
@@ -448,10 +500,14 @@ async function main() {
     );
     hintsCount.textContent = `${state.hintsRevealed}/${HINT_COUNT}`;
     attemptCount.textContent = String(state.guessIds.length);
-    if (state.phase !== "guessing") {
-      input.disabled = true;
-    }
-    btnViewResults.hidden = state.phase === "guessing";
+
+    // Hide the text/sprite picker once we leave the guessing phase.
+    const inGuess = state.phase === "guessing";
+    guessRow.hidden = !inGuess;
+    if (!inGuess) input.disabled = true;
+
+    renderFinalChoice();
+    btnViewResults.hidden = isPlaying(state);
     syncSubmitState();
   }
   refresh();
@@ -475,7 +531,15 @@ async function main() {
     input.value = "";
     pendingItem = null;
     refresh();
-    if (state.phase !== "guessing") finalize();
+    if (isFinished(state)) finalize();
+  }
+
+  function commitFinalChoice(it: Item) {
+    if (state.phase !== "multipleChoice") return;
+    applyFinalChoice(state, it.id);
+    saveProgress(toProgress(state));
+    refresh();
+    if (isFinished(state)) finalize();
   }
 
   function finalize() {
@@ -504,7 +568,7 @@ async function main() {
   btnViewResults.addEventListener("click", () => showResultModal(state, quotes));
 
   // Finished puzzle: sync stats, but do not auto-open the result modal (use VIEW RESULTS).
-  if (state.phase !== "guessing") {
+  if (isFinished(state)) {
     stopTimer();
     recordResult(
       {

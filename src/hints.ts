@@ -1,5 +1,5 @@
 /**
- * Generate the 7-hint ladder for an item, vague -> specific.
+ * Generate the 6-hint ladder for an item, vague -> specific.
  *
  * Each hint is a complete natural-language sentence (not a label/value
  * pair) so the board reads like the original Reddit post:
@@ -10,11 +10,10 @@
  *   4. It was added in Afterbirth.
  *   5. It breaks rocks and damages enemies.
  *   6. Description: "Rocks didn't stand a chance."
- *   7. Item name begins with: Notched...
  *
  * Hint #5 (effect summary) reuses the first sentence of the in-game
- * description. Hint #7 (name beginning) shows the first word with an
- * ellipsis — strong narrowing without giving the answer outright.
+ * description. After all 6 hints are exhausted, the player falls into
+ * a 4-option multiple-choice round (see src/finalChoice.ts).
  */
 
 export type Item = {
@@ -37,8 +36,7 @@ export type HintKind =
   | "pool"
   | "dlc"
   | "effect"
-  | "quote"
-  | "nameStart";
+  | "quote";
 
 export type Hint = {
   kind: HintKind;
@@ -90,21 +88,6 @@ function effectSentence(item: Item): string {
   return s;
 }
 
-function nameStart(name: string): string {
-  // Strip leading "The " for the reveal — most "The X" items are guessed
-  // by the second word anyway.
-  const stripped = name.replace(/^the\s+/i, "");
-  const words = stripped.split(/\s+/);
-  if (words.length > 1) {
-    // Multi-word: reveal first word.
-    return `Item name begins with: ${words[0]}…`;
-  }
-  // Single-word: reveal first 3-4 chars.
-  const first = stripped;
-  const cut = Math.min(first.length - 1, Math.max(3, Math.ceil(first.length / 3)));
-  return `Item name begins with: ${first.slice(0, cut)}…`;
-}
-
 const KIND_ORDER: HintKind[] = [
   "quality",
   "type",
@@ -112,7 +95,6 @@ const KIND_ORDER: HintKind[] = [
   "dlc",
   "effect",
   "quote",
-  "nameStart",
 ];
 
 export function generateHints(item: Item, pickupQuote = ""): Hint[] {
@@ -134,8 +116,8 @@ export function generateHints(item: Item, pickupQuote = ""): Hint[] {
         ? `Description: "${pickupQuote}"`
         : "Description: (none).",
     },
-    { kind: "nameStart", text: nameStart(item.name) },
   ];
 }
 
-export const HINT_COUNT = 7;
+export const HINT_COUNT = 6;
+export const FINAL_CHOICE_COUNT = 4;

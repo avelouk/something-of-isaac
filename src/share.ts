@@ -4,8 +4,11 @@
  * Format (matches the design reference):
  *
  *   Something of Isaac · 2026-05-02
- *   ✓ 3/7 hints · 2 tries
- *   🟥🟥🟥⬜⬜⬜⬜  ⏱ 00:42
+ *   ✓ 3/6 hints · 2 tries
+ *   🟥🟥🟥⬜⬜⬜  ⏱ 00:42
+ *
+ * If the player went through the multiple-choice round, a 🎯 is
+ * appended to the score line — wins-via-MC and losses both carry it.
  */
 
 import { HINT_COUNT } from "./hints.ts";
@@ -31,8 +34,9 @@ export function shareString(opts: {
   hintsUsed: number; // 1..HINT_COUNT
   guessCount: number;
   activeSeconds: number;
+  usedFinalChoice: boolean;
 }) {
-  const { won, hintsUsed, guessCount, activeSeconds } = opts;
+  const { won, hintsUsed, guessCount, activeSeconds, usedFinalChoice } = opts;
   let bar = "";
   for (let i = 0; i < HINT_COUNT; i++) {
     if (!won) bar += SOLID; // all-red ladder on loss
@@ -42,8 +46,9 @@ export function shareString(opts: {
   const mark = won ? "✓" : "✗";
   const score = won ? `${hintsUsed}/${HINT_COUNT}` : `X/${HINT_COUNT}`;
   const tries = `${guessCount} ${guessCount === 1 ? "try" : "tries"}`;
+  const mc = usedFinalChoice ? " 🎯" : "";
   const time = `⏱ ${formatTime(activeSeconds)}`;
-  return `Something of Isaac · ${formatDate()}\n${mark} ${score} hints · ${tries}\n${bar}  ${time}`;
+  return `Something of Isaac · ${formatDate()}\n${mark} ${score} hints · ${tries}${mc}\n${bar}  ${time}`;
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

@@ -150,8 +150,16 @@ export function attachAutocomplete(opts: AutocompleteOptions) {
     if (i < 0 || i >= current.length) return;
     const m = current[i];
     pickedId = m.item.id;
+    // Drop the item name into the input so the player has an
+    // unambiguous "you picked X" cue (especially on mobile, where
+    // the sprite-grid highlight is easy to miss).
+    input.value = m.item.name;
     onSelect(m.item);
-    render(); // re-render to move the .picked highlight
+    // Close the dropdown and dismiss the on-screen keyboard so the
+    // GUESS button is unobstructed and clearly the next action.
+    current = [];
+    render();
+    requestAnimationFrame(() => input.blur());
   }
 
   input.addEventListener("input", update);
@@ -188,6 +196,12 @@ export function attachAutocomplete(opts: AutocompleteOptions) {
   });
 
   input.addEventListener("focus", () => {
+    // If the input is holding an auto-filled picked name, select it so
+    // the next keystroke replaces it instead of appending.
+    if (pickedId != null) {
+      requestAnimationFrame(() => input.select());
+      return;
+    }
     if (input.value.trim()) update();
   });
 }

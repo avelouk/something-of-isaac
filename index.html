@@ -35,7 +35,7 @@
       </header>
 
       <div class="meta">
-        <div>HINTS <span class="seed" id="hints-count">1/7</span></div>
+        <div>HINTS <span class="seed" id="hints-count">1/6</span></div>
         <div class="timer" id="utc-clock"></div>
         <div>ATTEMPTS <span class="seed" id="attempt-count">0</span></div>
       </div>
@@ -52,7 +52,16 @@
         </div>
 
         <div class="hero-frame" id="hero-frame">
-          <div class="blind">?</div>
+          <div class="blind blind-mystery">
+            <img
+              class="blind-icon"
+              src="./img/questionmark.png"
+              alt=""
+              width="32"
+              height="32"
+              decoding="async"
+            />
+          </div>
         </div>
 
         <div class="hints" id="hints"></div>
@@ -61,7 +70,7 @@
           Each wrong guess unlocks the next hint.
         </div>
 
-        <div class="guess-row">
+        <div class="guess-row" id="guess-row">
           <input
             id="guess-input"
             type="text"
@@ -79,6 +88,8 @@
           <button class="guess-btn" id="guess-submit" type="button">GUESS</button>
           <ul id="guess-listbox" class="autocomplete" role="listbox" hidden></ul>
         </div>
+
+        <div class="final-choice" id="final-choice" role="group" aria-label="Final round" hidden></div>
 
         <div class="wrong-log" id="guess-history"></div>
       </div>

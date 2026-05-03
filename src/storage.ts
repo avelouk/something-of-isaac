@@ -11,14 +11,16 @@
 const SCHEMA_KEY = "idg:schema";
 const STATS_KEY = "idg:stats";
 const PROGRESS_PREFIX = "idg:p:";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export type Progress = {
   puzzleNumber: number;
   guessIds: number[];
-  hintsRevealed: number; // 1..7; we always show at least the first hint
+  hintsRevealed: number; // 1..6; we always show at least the first hint
   finished: boolean;
   won: boolean;
+  /** True once the player has been forced into the multiple-choice round. */
+  usedFinalChoice: boolean;
   firstSeenAt: number; // unix ms — used for clock-manipulation guard
   finishedAt?: number;
   activeSeconds: number; // wall-clock time spent with the tab open and game in progress
