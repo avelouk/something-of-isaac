@@ -10,6 +10,8 @@
     "build:items": "tsx scripts/build-items.ts",
     "build:schedule": "tsx scripts/build-schedule.ts",
     "download:sprites": "tsx scripts/download-sprites.ts",
+    "localize:sprites": "tsx scripts/localize-item-images.ts",
+    "selfhost:sprites": "npm run download:sprites && npm run localize:sprites",
     "build:data": "npm run build:items && npm run build:schedule"
   },
   "dependencies": {
