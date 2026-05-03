@@ -6,7 +6,7 @@
  */
 
 import { generateHints, HINT_COUNT, type Item } from "./hints.ts";
-import { applyGuess, fromProgress, newGame, score, toProgress } from "./game.ts";
+import { applyGuess, fromProgress, newGame, toProgress } from "./game.ts";
 import type { GameState } from "./game.ts";
 import { getPuzzleNumber, getEntryForPuzzle, type Schedule } from "./puzzle.ts";
 import { loadProgress, saveProgress, recordResult, loadStats, type Stats } from "./storage.ts";
@@ -136,12 +136,28 @@ function buildShareString(state: GameState): string {
   });
 }
 
-function showResultModal(state: GameState, quotes: Record<number, string>, stats: Stats) {
+function showResultModal(state: GameState, quotes: Record<number, string>) {
   const root = $("modal-root");
   root.replaceChildren();
+
+  let countdownId: number | null = null;
+  const dismiss = () => {
+    if (countdownId !== null) {
+      clearInterval(countdownId);
+      countdownId = null;
+    }
+    document.removeEventListener("keydown", onEscape);
+    root.replaceChildren();
+  };
+
+  const onEscape = (e: KeyboardEvent) => {
+    if (e.key === "Escape") dismiss();
+  };
+  document.addEventListener("keydown", onEscape);
+
   const bg = document.createElement("div");
   bg.className = "modal-bg";
-  bg.addEventListener("click", () => root.replaceChildren());
+  bg.addEventListener("click", dismiss);
 
   const modal = document.createElement("div");
   modal.className = "modal";
@@ -151,7 +167,7 @@ function showResultModal(state: GameState, quotes: Record<number, string>, stats
   close.className = "modal-close";
   close.textContent = "✕";
   close.setAttribute("aria-label", "Close");
-  close.addEventListener("click", () => root.replaceChildren());
+  close.addEventListener("click", dismiss);
   modal.appendChild(close);
 
   const title = document.createElement("div");
@@ -213,10 +229,16 @@ function showResultModal(state: GameState, quotes: Record<number, string>, stats
   statsBtn.className = "btn btn-secondary";
   statsBtn.textContent = "STATS";
   statsBtn.addEventListener("click", () => {
-    root.replaceChildren();
+    dismiss();
     showStatsPopover(loadStats());
   });
   btns.appendChild(statsBtn);
+
+  const closeModalBtn = document.createElement("button");
+  closeModalBtn.className = "btn btn-secondary";
+  closeModalBtn.textContent = "CLOSE";
+  closeModalBtn.addEventListener("click", dismiss);
+  btns.appendChild(closeModalBtn);
 
   modal.appendChild(btns);
 
@@ -224,14 +246,11 @@ function showResultModal(state: GameState, quotes: Record<number, string>, stats
   next.className = "next-room";
   const updateNext = () => (next.textContent = `NEXT ITEM IN ${nextResetCountdown()}`);
   updateNext();
-  const id = setInterval(updateNext, 1000);
-  bg.addEventListener("click", () => clearInterval(id));
+  countdownId = window.setInterval(updateNext, 1000);
   modal.appendChild(next);
 
   bg.appendChild(modal);
   root.appendChild(bg);
-
-  void stats;
 }
 
 function showHelpModal() {
@@ -400,6 +419,7 @@ async function main() {
   const guessHistory = $("guess-history");
   const hintsCount = $("hints-count");
   const attemptCount = $("attempt-count");
+  const btnViewResults = $("btn-view-results") as HTMLButtonElement;
 
   const input = $("guess-input") as HTMLInputElement;
   const listbox = $("guess-listbox") as HTMLUListElement;
@@ -431,6 +451,7 @@ async function main() {
     if (state.phase !== "guessing") {
       input.disabled = true;
     }
+    btnViewResults.hidden = state.phase === "guessing";
     syncSubmitState();
   }
   refresh();
@@ -459,7 +480,7 @@ async function main() {
 
   function finalize() {
     stopTimer();
-    const stats = recordResult(
+    recordResult(
       {
         puzzleNumber: state.puzzleNumber,
         won: state.phase === "won",
@@ -470,7 +491,7 @@ async function main() {
       },
       state.puzzleNumber,
     );
-    showResultModal(state, quotes, stats);
+    showResultModal(state, quotes);
   }
 
   submit.addEventListener("click", commitGuess);
@@ -480,11 +501,23 @@ async function main() {
 
   $("btn-help").addEventListener("click", showHelpModal);
   $("btn-stats").addEventListener("click", () => showStatsPopover(loadStats()));
+  btnViewResults.addEventListener("click", () => showResultModal(state, quotes));
 
-  // If they reload into a finished puzzle, jump right to the result.
-  if (state.phase !== "guessing") finalize();
-
-  void score; // imported for future use (already factored into hintsUsed)
+  // Finished puzzle: sync stats, but do not auto-open the result modal (use VIEW RESULTS).
+  if (state.phase !== "guessing") {
+    stopTimer();
+    recordResult(
+      {
+        puzzleNumber: state.puzzleNumber,
+        won: state.phase === "won",
+        hintsUsed: state.hintsRevealed,
+        guesses: state.guessIds.length,
+        finishedAt: state.finishedAt ?? Date.now(),
+        activeSeconds: state.activeSeconds,
+      },
+      state.puzzleNumber,
+    );
+  }
 }
 
 main().catch((e) => {

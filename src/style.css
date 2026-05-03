@@ -159,6 +159,34 @@ body::before {
   margin-bottom: 16px;
   gap: 12px;
 }
+.card-head-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.btn-view-results {
+  font-family: "VT323", monospace;
+  font-size: 16px;
+  letter-spacing: 1px;
+  padding: 6px 12px;
+  border-radius: 3px;
+  border: 2px solid var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--ink);
+  white-space: nowrap;
+}
+.btn-view-results:hover {
+  background: var(--gold-soft);
+  color: var(--ink);
+}
+.btn-view-results:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
 .card-title {
   font-family: "VT323", monospace;
   font-size: 22px;
