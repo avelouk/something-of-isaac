@@ -1,19 +1,13 @@
 /**
- * Generate the 6-hint ladder for an item, vague -> specific.
+ * Hint ladders for the daily puzzle (six steps, harder → easier in authoring).
  *
- * Each hint is a complete natural-language sentence (not a label/value
- * pair) so the board reads like the original Reddit post:
+ * Resolution order:
+ *   1. Schedule entry `hints` — per UTC calendar day (see schedule.json), ideal for creative copy.
+ *   2. Item `customHints` — legacy / item-default authoring in items.json.
+ *   3. `generateAutoHints` — metadata fallback when nothing hand-authored exists.
  *
- *   1. It's a Quality 1 item.
- *   2. It's an active item.
- *   3. It appears in Shops and the Crane Game.
- *   4. It was added in Afterbirth.
- *   5. It breaks rocks and damages enemies.
- *   6. Description: "Rocks didn't stand a chance."
- *
- * Hint #5 (effect summary) reuses the first sentence of the in-game
- * description. After all 6 hints are exhausted, the player falls into
- * a 4-option multiple-choice round (see src/finalChoice.ts).
+ * After all six text hints are exhausted, the player enters the multiple-choice
+ * round (see src/finalChoice.ts).
  */
 
 export type Item = {
@@ -97,13 +91,12 @@ const KIND_ORDER: HintKind[] = [
   "quote",
 ];
 
-export function generateHints(item: Item, pickupQuote = ""): Hint[] {
-  // If hand-crafted hints exist, use them verbatim; the kinds align
-  // 1:1 with the canonical ladder so downstream code (board, share)
-  // doesn't need to special-case overrides.
-  if (item.customHints && item.customHints.length === HINT_COUNT) {
-    return item.customHints.map((text, i) => ({ kind: KIND_ORDER[i], text }));
-  }
+function hintsFromStrings(texts: string[]): Hint[] {
+  return texts.map((text, i) => ({ kind: KIND_ORDER[i], text }));
+}
+
+/** Metadata-only ladder (used when no hand-authored hints exist). */
+export function generateAutoHints(item: Item, pickupQuote = ""): Hint[] {
   return [
     { kind: "quality", text: `It's a Quality ${item.quality} item.` },
     { kind: "type", text: TYPE_TEXT[item.type] },
@@ -117,6 +110,23 @@ export function generateHints(item: Item, pickupQuote = ""): Hint[] {
         : "Description: (none).",
     },
   ];
+}
+
+/**
+ * Full resolver: schedule overrides → item.customHints → auto metadata hints.
+ */
+export function hintsForPuzzle(
+  scheduleHints: string[] | undefined,
+  item: Item,
+  pickupQuote = "",
+): Hint[] {
+  if (scheduleHints && scheduleHints.length === HINT_COUNT) {
+    return hintsFromStrings(scheduleHints);
+  }
+  if (item.customHints && item.customHints.length === HINT_COUNT) {
+    return hintsFromStrings(item.customHints);
+  }
+  return generateAutoHints(item, pickupQuote);
 }
 
 export const HINT_COUNT = 6;

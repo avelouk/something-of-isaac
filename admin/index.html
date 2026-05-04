@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Schedule admin (local)</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        background: #111;
+        color: #e8e8e8;
+      }
+      body {
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+      }
+      label {
+        display: block;
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        color: #aaa;
+      }
+      input[type="date"],
+      input[type="text"],
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0.25rem;
+        padding: 0.5rem;
+        background: #1c1c1c;
+        border: 1px solid #333;
+        color: inherit;
+        border-radius: 4px;
+      }
+      textarea {
+        min-height: 3rem;
+        resize: vertical;
+      }
+      button {
+        margin-top: 1.25rem;
+        padding: 0.6rem 1rem;
+        background: #6c3;
+        border: none;
+        border-radius: 4px;
+        color: #111;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .banner {
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+      }
+      .banner.warn {
+        background: #3a2a10;
+        border: 1px solid #654;
+      }
+      .banner.lock {
+        background: #2a1820;
+        border: 1px solid #634;
+      }
+      .banner.ok {
+        background: #142818;
+        border: 1px solid #363;
+      }
+      .meta {
+        font-size: 0.8rem;
+        color: #888;
+        margin-bottom: 1rem;
+      }
+      #status {
+        margin-top: 1rem;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Schedule admin</h1>
+    <p class="meta">
+      Local tool — runs only via <code>npm run admin</code>. Past UTC dates are read-only.
+    </p>
+    <div id="banners"></div>
+    <label for="date">Puzzle date (UTC)</label>
+    <input id="date" type="date" />
+    <label for="item-search">Item</label>
+    <input id="item-search" type="text" placeholder="Search name…" autocomplete="off" />
+    <select id="item-select" size="8" style="margin-top: 0.5rem"></select>
+    <div id="hints-wrap"></div>
+    <button id="save" type="button">Save to schedule.json</button>
+    <div id="status"></div>
+    <script src="/client.js" type="module"></script>
+  </body>
+</html>

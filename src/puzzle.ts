@@ -1,10 +1,9 @@
 /**
  * Daily puzzle resolution.
  *
- * Each UTC day maps to one puzzleNumber. Each puzzleNumber maps to one
- * itemId via a deterministic seeded draw (see scripts/build-schedule.ts).
- * The schedule.json is pre-computed and committed so the answer is the
- * same across clients regardless of algorithm changes later.
+ * Each UTC calendar day (YYYY-MM-DD) is the canonical puzzle identity.
+ * Puzzle #n is still derived from BASE_DATE (puzzle #1 = launch day UTC).
+ * Schedule rows include both `date` and `n` for lookups and display.
  */
 
 import seedrandom from "seedrandom";
@@ -21,10 +20,39 @@ export function getPuzzleNumber(now: Date = new Date()): number {
   return Math.floor((utcMidnight - BASE_DATE_UTC) / MS_PER_DAY) + 1;
 }
 
+/** UTC calendar day string for puzzle #n (matches ISO date at UTC midnight). */
+export function puzzleNumberToUtcDateString(n: number): string {
+  const ms = BASE_DATE_UTC + (n - 1) * MS_PER_DAY;
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
+
+/** Inverse of puzzleNumberToUtcDateString for that same UTC midnight convention. */
+export function utcDateStringToPuzzleNumber(dateStr: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!m) throw new Error(`invalid date "${dateStr}", expected YYYY-MM-DD (UTC)`);
+  const utcMidnight = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Math.floor((utcMidnight - BASE_DATE_UTC) / MS_PER_DAY) + 1;
+}
+
+/** Today's puzzle date in UTC, YYYY-MM-DD. */
+export function utcTodayDateString(now: Date = new Date()): string {
+  const y = now.getUTCFullYear();
+  const mo = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(now.getUTCDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
+
 export type ScheduleEntry = {
-  n: number; // puzzle number
+  /** UTC calendar day — canonical row identity (author imports use this). */
+  date: string;
+  n: number;
   itemId: number;
   hash: string; // sha256(itemId + salt + n) — cheap anti-cheat
+  hints?: string[];
 };
 
 export type Schedule = {
@@ -33,8 +61,24 @@ export type Schedule = {
   entries: ScheduleEntry[];
 };
 
+/** Legacy schedule rows omitted `date`; hydrate at load so old deploys keep working. */
+export function migrateScheduleIfNeeded(raw: Schedule): Schedule {
+  if (!raw.entries?.length) return raw;
+  const first = raw.entries[0];
+  if (typeof first.date === "string") return raw;
+  return {
+    ...raw,
+    version: Math.max(raw.version ?? 1, 2),
+    entries: raw.entries.map((e) => ({
+      ...e,
+      date: puzzleNumberToUtcDateString(e.n),
+    })),
+  };
+}
+
 export function getEntryForPuzzle(schedule: Schedule, n: number): ScheduleEntry | null {
-  return schedule.entries.find((e) => e.n === n) ?? null;
+  const dateStr = puzzleNumberToUtcDateString(n);
+  return schedule.entries.find((e) => e.date === dateStr) ?? schedule.entries.find((e) => e.n === n) ?? null;
 }
 
 /**

@@ -5,7 +5,7 @@
  *   ?puzzle=N — override today's puzzle (for QA / archive mode).
  */
 
-import { generateHints, HINT_COUNT, type Item } from "./hints.ts";
+import { hintsForPuzzle, HINT_COUNT, type Item } from "./hints.ts";
 import {
   applyFinalChoice,
   applyGuess,
@@ -16,7 +16,12 @@ import {
   toProgress,
 } from "./game.ts";
 import type { GameState } from "./game.ts";
-import { getPuzzleNumber, getEntryForPuzzle, type Schedule } from "./puzzle.ts";
+import {
+  getPuzzleNumber,
+  getEntryForPuzzle,
+  migrateScheduleIfNeeded,
+  type Schedule,
+} from "./puzzle.ts";
 import { loadProgress, saveProgress, recordResult, loadStats, type Stats } from "./storage.ts";
 import { attachAutocomplete, indexItems, type Searchable } from "./ui/autocomplete.ts";
 import { renderBoard, renderGuessList } from "./ui/board.ts";
@@ -397,11 +402,12 @@ async function main() {
   const params = new URLSearchParams(location.search);
   const puzzleOverride = Number(params.get("puzzle"));
 
-  const [items, quotes, schedule] = await Promise.all([
+  const [items, quotes, scheduleRaw] = await Promise.all([
     loadJSON<Item[]>(import.meta.env.BASE_URL + "data/items.json"),
     loadJSON<Record<number, string>>(import.meta.env.BASE_URL + "data/quotes.json"),
     loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
   ]);
+  const schedule = migrateScheduleIfNeeded(scheduleRaw);
 
   const puzzleNumber =
     Number.isFinite(puzzleOverride) && puzzleOverride > 0
@@ -432,7 +438,7 @@ async function main() {
     saveProgress(toProgress(state));
   });
 
-  const hints = generateHints(answer, quotes[answer.id]);
+  const hints = hintsForPuzzle(entry.hints, answer, quotes[answer.id]);
   const board = $("hints");
   const heroFrame = $("hero-frame");
   const hintHelp = $("hint-help");

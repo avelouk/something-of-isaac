@@ -2,11 +2,25 @@
 
 A daily Wordle-like puzzle for *The Binding of Isaac*. Guess today's collectible with as few hints as possible.
 
+**Play:** [avelouk.com/something-of-isaac](https://avelouk.com/something-of-isaac/)
+
 Inspired by [this r/bindingofisaac thread](https://www.reddit.com/r/bindingofisaac/comments/1t12aqm/try_to_guess_the_item_with_the_least_amount_of/) — *“Try to guess the Item with the least amount of Tips!”*
 
 ## How to play
 
-You see one hint about today's item. Type a guess — name, pickup quote, effect, item pool, or a snippet of the description all match. If wrong, the next hint is revealed automatically. Seven hints, then the day is over. Lower score (fewer hints used) is better. New puzzle every day at 00:00 UTC.
+You see one hint about today's item. Type a guess — name, pickup quote, effect, item pool, or a snippet of the description all match. If wrong, the next hint is revealed automatically. Six text hints, then an optional four-tile final round if you still have not guessed. Lower score (fewer hints used) is better. New puzzle every day at 00:00 UTC.
+
+## Daily schedule & hints
+
+Each UTC day maps to one row in **`public/data/schedule.json`**: `date`, item id, optional **`hints`** (six strings), and a stable hash. **`npm run build:schedule`** fills two years of rows from a seeded weighted draw; re-running it preserves existing **`hints`** when the same date still resolves to the same item.
+
+**Authoring hand-written hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), item, and six hints; it writes **`schedule.json`**. Past UTC dates are read-only there.
+
+**Which hints the game shows** (`hintsForPuzzle` in `src/hints.ts`), in order:
+
+1. **`hints` on that day’s schedule row** — custom copy you added via admin or merged into JSON.
+2. Else **`customHints` on the item** in `items.json` (legacy per-item overrides).
+3. Else **auto-generated** six-step ladder from item metadata (quality, type, pools, DLC, first description sentence, pickup quote from `quotes.json`).
 
 ## Run locally
 
@@ -14,9 +28,10 @@ You see one hint about today's item. Type a guess — name, pickup quote, effect
 npm install
 npm run build:items  # one-time: items.json + quotes.json (see below)
 npm run dev          # http://localhost:5173/
+npm run admin        # optional: edit schedule + hints (writes schedule.json)
 ```
 
-Deployed at `https://<user>.github.io/something-of-isaac/`. Production build path is `/something-of-isaac/`; override via `VITE_BASE` if you rename the repo or set up a custom domain.
+You can also deploy a static build elsewhere (e.g. GitHub Pages at `https://<user>.github.io/something-of-isaac/`); set **`VITE_BASE`** if the base path differs. The share-to-clipboard line ends with the public URL **`https://avelouk.com/something-of-isaac/`** (see `SHARE_SITE_URL` in `src/share.ts`).
 
 ## How `items.json` is built
 

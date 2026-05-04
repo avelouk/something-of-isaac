@@ -6,12 +6,16 @@
  *   Something of Isaac · 2026-05-02
  *   ✓ 3/6 hints · 2 tries
  *   🟥🟥🟥⬜⬜⬜  ⏱ 00:42
+ *   https://avelouk.com/something-of-isaac/
  *
  * If the player went through the multiple-choice round, a 🎯 is
  * appended to the score line — wins-via-MC and losses both carry it.
  */
 
 import { HINT_COUNT } from "./hints.ts";
+
+/** Public site — appended to copied share text. */
+export const SHARE_SITE_URL = "https://avelouk.com/something-of-isaac/";
 
 const SOLID = "🟥";
 const EMPTY = "⬜";
@@ -48,7 +52,7 @@ export function shareString(opts: {
   const tries = `${guessCount} ${guessCount === 1 ? "try" : "tries"}`;
   const mc = usedFinalChoice ? " 🎯" : "";
   const time = `⏱ ${formatTime(activeSeconds)}`;
-  return `Something of Isaac · ${formatDate()}\n${mark} ${score} hints · ${tries}${mc}\n${bar}  ${time}`;
+  return `Something of Isaac · ${formatDate()}\n${mark} ${score} hints · ${tries}${mc}\n${bar}  ${time}\n${SHARE_SITE_URL}`;
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {
