@@ -1,0 +1,16 @@
+# Cloudflare Worker + Durable Object for daily unique-player counts.
+# Deploy from repo root: npm run deploy:stats (after npx wrangler login).
+# See README "Daily stats" and worker/README.md.
+
+name = "something-of-isaac-stats"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[[durable_objects.bindings]]
+name = "DAILY_STATS"
+class_name = "DailyRoom"
+
+# Workers Free plan: only SQLite-backed Durable Objects (not legacy key-value `new_classes`).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DailyRoom"]

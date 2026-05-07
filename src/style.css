@@ -654,6 +654,11 @@ body::before {
   color: #6a544c;
   letter-spacing: 2px;
 }
+.footer .daily-players {
+  margin-bottom: 10px;
+  color: #8a7268;
+  letter-spacing: 1px;
+}
 
 /* MOBILE */
 @media (max-width: 600px) {

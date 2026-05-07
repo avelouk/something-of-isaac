@@ -27,6 +27,7 @@ import { attachAutocomplete, indexItems, type Searchable } from "./ui/autocomple
 import { renderBoard, renderGuessList } from "./ui/board.ts";
 import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
+import { initDailyStats } from "./analytics.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -433,6 +434,7 @@ async function main() {
 
   $("brand-sub").textContent = formatBrandSub();
   $("puzzle-number").textContent = `PUZZLE #${puzzleNumber}`;
+  void initDailyStats(import.meta.env.VITE_STATS_WORKER_URL);
   const stopTimer = startElapsedTimer($("utc-clock"), state, () => {
     // Persist active-time on each tick so a reload resumes from the same point.
     saveProgress(toProgress(state));

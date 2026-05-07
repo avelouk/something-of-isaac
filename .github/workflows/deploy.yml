@@ -43,7 +43,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Optional: GitHub repo Variable VITE_STATS_WORKER_URL = https://<your-worker>.workers.dev
       - run: npm run build
+        env:
+          VITE_STATS_WORKER_URL: ${{ vars.VITE_STATS_WORKER_URL }}
       - uses: actions/upload-artifact@v4
         with:
           name: dist

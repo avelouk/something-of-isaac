@@ -4,3 +4,8 @@ dist
 *.log
 .vite
 tsconfig.tsbuildinfo
+.wrangler
+
+# Optional local prod env (worker URL for builds)
+.env.production
+.env.production.local
