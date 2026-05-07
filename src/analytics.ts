@@ -41,7 +41,7 @@ export async function initDailyStats(workerBaseUrl: string | undefined): Promise
     if (!visitRes.ok) return;
     const data = (await visitRes.json()) as { unique?: unknown };
     if (typeof data.unique !== "number" || !Number.isFinite(data.unique)) return;
-    el.textContent = `${data.unique.toLocaleString()} players today · UTC midnight reset`;
+    el.textContent = `${data.unique.toLocaleString()} players today`;
     el.removeAttribute("hidden");
   } catch {
     // Offline or worker URL misconfigured — leave footer line hidden.
