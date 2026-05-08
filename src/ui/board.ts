@@ -31,12 +31,12 @@ export function renderBoard(container: HTMLElement, hints: Hint[], revealed: num
 
 export function renderGuessList(
   container: HTMLElement,
-  guesses: { id: number; name: string }[],
+  guesses: { id: number; name: string; correct?: boolean }[],
 ) {
   container.replaceChildren();
   for (const g of guesses) {
     const row = document.createElement("div");
-    row.className = "wrong-entry";
+    row.className = "wrong-entry" + (g.correct ? " correct" : "");
     row.textContent = g.name;
     container.appendChild(row);
   }

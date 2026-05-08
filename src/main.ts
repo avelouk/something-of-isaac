@@ -504,6 +504,7 @@ async function main() {
       state.guessIds.map((id) => ({
         id,
         name: items.find((it) => it.id === id)?.name ?? `#${id}`,
+        correct: id === state.answer.id,
       })),
     );
     hintsCount.textContent = `${state.hintsRevealed}/${HINT_COUNT}`;

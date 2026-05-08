@@ -481,6 +481,13 @@ body::before {
   color: var(--blood);
   font-weight: bold;
 }
+.wrong-entry.correct {
+  color: var(--moss);
+}
+.wrong-entry.correct::before {
+  content: "✓";
+  color: var(--moss);
+}
 
 /* RESULT MODAL */
 .modal-bg {
