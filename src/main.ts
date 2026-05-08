@@ -53,47 +53,83 @@ function formatBrandSub(): string {
 }
 
 function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const s = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `⏱ ${m}:${s}`;
+  const totalMs = Math.max(0, Math.floor(seconds * 1000));
+  const m = Math.floor(totalMs / 60000).toString().padStart(2, "0");
+  const s = Math.floor((totalMs % 60000) / 1000).toString().padStart(2, "0");
+  const ms = (totalMs % 1000).toString().padStart(3, "0");
+  return `⏱ ${m}:${s}.${ms}`;
 }
 
 /**
- * Counts up active wall-clock seconds while the page is open and the
- * game is in progress. Pauses on tab hide and on win/loss. Persists
- * the running total into Progress so a reload resumes from the same
- * point — leaving the tab open overnight does not inflate the timer.
+ * Counts wall-clock seconds while the game is in progress, including
+ * while the tab is in the background. Pauses on win/loss. Persists
+ * the running total into Progress so a reload resumes seamlessly.
+ *
+ * Display updates via rAF for smooth millisecond rendering; persistence
+ * is a separate 1Hz interval to avoid hammering localStorage.
  */
 function startElapsedTimer(
   el: HTMLElement,
   state: { activeSeconds: number; phase: string },
   onTick: () => void,
 ): () => void {
-  el.textContent = formatElapsed(state.activeSeconds);
-  let id: number | null = null;
   const playing = () => state.phase === "guessing" || state.phase === "multipleChoice";
-  const tick = () => {
-    if (!playing()) return;
-    if (document.hidden) return;
-    state.activeSeconds += 1;
+  const baseSeconds = state.activeSeconds;
+  const startWall = Date.now();
+  let rafId: number | null = null;
+  let saveId: number | null = null;
+
+  const compute = () => {
+    state.activeSeconds = baseSeconds + (Date.now() - startWall) / 1000;
+  };
+
+  const stop = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (saveId !== null) {
+      clearInterval(saveId);
+      saveId = null;
+    }
+  };
+
+  const renderFrame = () => {
+    rafId = null;
+    if (!playing()) {
+      stop();
+      return;
+    }
+    compute();
     el.textContent = formatElapsed(state.activeSeconds);
+    rafId = requestAnimationFrame(renderFrame);
+  };
+
+  const persist = () => {
+    if (!playing()) {
+      stop();
+      return;
+    }
+    compute();
     onTick();
   };
-  const start = () => {
-    if (id !== null) return;
-    if (!playing()) return;
-    id = window.setInterval(tick, 1000);
-  };
-  const stop = () => {
-    if (id === null) return;
-    clearInterval(id);
-    id = null;
-  };
+
+  el.textContent = formatElapsed(state.activeSeconds);
+  if (playing()) {
+    rafId = requestAnimationFrame(renderFrame);
+    saveId = window.setInterval(persist, 1000);
+  }
+
+  // rAF doesn't fire while the tab is hidden; immediately repaint when
+  // the tab returns so the timer doesn't show a stale value.
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) stop();
-    else start();
+    if (!document.hidden && playing()) {
+      compute();
+      el.textContent = formatElapsed(state.activeSeconds);
+      if (rafId === null) rafId = requestAnimationFrame(renderFrame);
+    }
   });
-  start();
+
   return stop;
 }
 

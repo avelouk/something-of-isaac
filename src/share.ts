@@ -28,9 +28,11 @@ function formatDate(d: Date = new Date()): string {
 }
 
 function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const s = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
+  const totalMs = Math.max(0, Math.floor(seconds * 1000));
+  const m = Math.floor(totalMs / 60000).toString().padStart(2, "0");
+  const s = Math.floor((totalMs % 60000) / 1000).toString().padStart(2, "0");
+  const ms = (totalMs % 1000).toString().padStart(3, "0");
+  return `${m}:${s}.${ms}`;
 }
 
 export function shareString(opts: {
