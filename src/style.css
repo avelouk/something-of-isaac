@@ -261,6 +261,10 @@ body::before {
   border-left-color: var(--blood);
   background: #fffaee;
 }
+.hint.unlocked.winning {
+  border-left-color: var(--moss);
+}
+.hint.unlocked.winning .hint-num { color: var(--moss); }
 .hint-num {
   width: 36px;
   display: flex;
@@ -283,6 +287,14 @@ body::before {
   color: var(--ink);
 }
 .hint-body.locked { color: transparent; user-select: none; }
+
+@keyframes hint-reveal {
+  0%   { opacity: 0; transform: translateX(40px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.hint.just-revealed {
+  animation: hint-reveal 1000ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 
 .hint-help {
   font-family: "VT323", monospace;
@@ -460,31 +472,29 @@ body::before {
   color: var(--ink);
 }
 
-/* WRONG GUESS LOG */
-.wrong-log {
+/* GUESS LOG */
+.guess-log {
   margin-top: 14px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.wrong-entry {
+.guess-entry {
   font-family: "VT323", monospace;
   font-size: 16px;
-  color: var(--blood-deep);
   letter-spacing: 0.5px;
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.wrong-entry::before {
+.guess-entry.wrong { color: var(--blood-deep); }
+.guess-entry.wrong::before {
   content: "✗";
   color: var(--blood);
   font-weight: bold;
 }
-.wrong-entry.correct {
-  color: var(--moss);
-}
-.wrong-entry.correct::before {
+.guess-entry.correct { color: var(--moss); }
+.guess-entry.correct::before {
   content: "✓";
   color: var(--moss);
 }

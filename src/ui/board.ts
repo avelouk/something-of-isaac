@@ -8,12 +8,24 @@
 
 import type { Hint } from "../hints.ts";
 
-export function renderBoard(container: HTMLElement, hints: Hint[], revealed: number) {
+export function renderBoard(
+  container: HTMLElement,
+  hints: Hint[],
+  revealed: number,
+  previouslyRevealed: number = revealed,
+  winningIndex?: number,
+) {
   container.replaceChildren();
   hints.forEach((h, i) => {
     const isUnlocked = i < revealed;
+    const isNewlyRevealed = isUnlocked && i >= previouslyRevealed;
+    const isWinning = i === winningIndex;
     const row = document.createElement("div");
-    row.className = "hint" + (isUnlocked ? " unlocked" : "");
+    row.className =
+      "hint" +
+      (isUnlocked ? " unlocked" : "") +
+      (isNewlyRevealed ? " just-revealed" : "") +
+      (isWinning ? " winning" : "");
     row.dataset.kind = h.kind;
 
     const num = document.createElement("div");
@@ -36,7 +48,7 @@ export function renderGuessList(
   container.replaceChildren();
   for (const g of guesses) {
     const row = document.createElement("div");
-    row.className = "wrong-entry" + (g.correct ? " correct" : "");
+    row.className = "guess-entry " + (g.correct ? "correct" : "wrong");
     row.textContent = g.name;
     container.appendChild(row);
   }

@@ -492,6 +492,12 @@ async function main() {
   const submit = $("guess-submit") as HTMLButtonElement;
 
   let pendingItem: Searchable | null = null;
+  // Decoupled from state.hintsRevealed so we can keep revealing rows
+  // post-win without corrupting the recorded score/share string.
+  // Reloading a finished puzzle shows every hint — the player has
+  // already earned the right to see them.
+  let visibleHints = isFinished(state) ? HINT_COUNT : state.hintsRevealed;
+  let prevVisible = visibleHints;
 
   function syncSubmitState() {
     if (state.phase !== "guessing") {
@@ -532,7 +538,13 @@ async function main() {
   }
 
   function refresh() {
-    renderBoard(board, hints, state.hintsRevealed);
+    if (state.hintsRevealed > visibleHints) visibleHints = state.hintsRevealed;
+    const winningIndex =
+      state.phase === "won" && !state.usedFinalChoice
+        ? state.hintsRevealed - 1
+        : undefined;
+    renderBoard(board, hints, visibleHints, prevVisible, winningIndex);
+    prevVisible = visibleHints;
     renderHero(heroFrame, state);
     renderHintHelp(hintHelp, state);
     renderGuessList(
@@ -576,7 +588,24 @@ async function main() {
     input.value = "";
     pendingItem = null;
     refresh();
-    if (isFinished(state)) finalize();
+    if (outcome === "correct") revealRemainingThenFinalize();
+  }
+
+  // After a correct guess, cascade the unseen hints in one by one so
+  // the player can read what they would have gotten, then open the
+  // result modal.
+  function revealRemainingThenFinalize() {
+    const INITIAL_PAUSE_MS = 600;
+    const STAGGER_MS = 1000;
+    const FINAL_PAUSE_MS = 1000;
+    const step = () => {
+      visibleHints += 1;
+      refresh();
+      if (visibleHints < HINT_COUNT) setTimeout(step, STAGGER_MS);
+      else setTimeout(finalize, FINAL_PAUSE_MS);
+    };
+    if (visibleHints >= HINT_COUNT) setTimeout(finalize, FINAL_PAUSE_MS);
+    else setTimeout(step, INITIAL_PAUSE_MS);
   }
 
   function commitFinalChoice(it: Item) {
