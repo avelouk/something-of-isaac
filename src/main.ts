@@ -279,7 +279,7 @@ function showResultModal(state: GameState, quotes: Record<number, string>) {
 
   const copyBtn = document.createElement("button");
   copyBtn.className = "btn btn-primary";
-  copyBtn.textContent = "COPY SHARE";
+  copyBtn.textContent = "COPY RESULTS";
   copyBtn.addEventListener("click", async () => {
     const ok = await copyToClipboard(share.textContent ?? "");
     copyBtn.textContent = ok ? "COPIED ✓" : "COPY FAILED";
@@ -303,6 +303,14 @@ function showResultModal(state: GameState, quotes: Record<number, string>) {
   btns.appendChild(closeModalBtn);
 
   modal.appendChild(btns);
+
+  const supportWrap = document.createElement("div");
+  supportWrap.className = "modal-support-link";
+  const supportA = document.createElement("a");
+  supportA.href = `${import.meta.env.BASE_URL}support.html`;
+  supportA.textContent = "☕ SUPPORT THE PROJECT";
+  supportWrap.appendChild(supportA);
+  modal.appendChild(supportWrap);
 
   const next = document.createElement("div");
   next.className = "next-room";

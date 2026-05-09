@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { resolve } from "node:path";
 
 // Production deploys to a GitHub Pages project URL:
 // https://<user>.github.io/something-of-isaac/
@@ -8,5 +9,11 @@ export default defineConfig(({ mode }) => ({
   build: {
     target: "es2022",
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        support: resolve(__dirname, "support.html"),
+      },
+    },
   },
 }));
