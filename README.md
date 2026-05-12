@@ -14,7 +14,9 @@ You see one hint about today's item. Type a guess — name, pickup quote, effect
 
 Each UTC day maps to one row in **`public/data/schedule.json`**: `date`, item id, optional **`hints`** (six strings), and a stable hash. **`npm run build:schedule`** fills two years of rows from a seeded weighted draw; re-running it preserves existing **`hints`** when the same date still resolves to the same item.
 
-**Authoring hand-written hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), item, and six hints; it writes **`schedule.json`**. Past UTC dates are read-only there.
+**Authoring hand-written hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), item, and six hints. Past UTC dates are read-only there. On save the admin server (a) writes `schedule.json` locally as a backup, and (b) publishes the hints to the worker — so new hints appear on the live site within ~60s with no git push or redeploy. See **Live hints overlay** below for one-time setup.
+
+**Live hints overlay:** the deployed game fetches `GET /hints` from the stats worker in parallel with `schedule.json` and merges the published `{ date → hints[] }` map on top of the static schedule. If the worker is unreachable or no override exists for a date, the committed schedule.json (or item / auto fallbacks) is used. The worker route is public for reads; writes require a bearer token only you have.
 
 **Which hints the game shows** (`hintsForPuzzle` in `src/hints.ts`), in order:
 
@@ -44,6 +46,28 @@ We use a **SQLite-backed Durable Object** (required on **Workers Free**; same `c
 - **GitHub Actions:** add repository **Variable** **`VITE_STATS_WORKER_URL`** (same URL as the deployed worker) so production builds include it.
 
 The worker only exposes **`POST /visit`** to browsers (returns today’s unique player count). Coarse country totals are still stored server-side for possible future use and are not returned by any route right now.
+
+### Hints overlay (one-time worker setup)
+
+The worker also stores a small `{ date → hints[] }` map in **Workers KV** so you can publish new hints without committing/redeploying. Reads are public and edge-cached for 60s; writes are bearer-token gated.
+
+1. Create the KV namespace and paste its id into `worker/wrangler.toml` (replacing `REPLACE_WITH_KV_NAMESPACE_ID`):
+   ```sh
+   npx wrangler kv namespace create HINTS_KV --config worker/wrangler.toml
+   ```
+2. Generate a random admin token and store it as a worker secret:
+   ```sh
+   openssl rand -hex 32                                         # copy the output
+   npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.toml   # paste it
+   ```
+3. Deploy: **`npm run deploy:stats`**.
+4. Create **`.env.local`** in the repo root (already gitignored) so the local admin server can publish:
+   ```sh
+   WORKER_URL=https://something-of-isaac-stats.<your-subdomain>.workers.dev
+   ADMIN_TOKEN=<same token you put as the worker secret>
+   ```
+
+After this, **`npm run admin`** writes locally **and** POSTs to `WORKER_URL/hints` on every save. The repo is safe to keep public: a fork that runs the admin gets a 401 from the worker because they don't have the token.
 
 ## How `items.json` is built
 

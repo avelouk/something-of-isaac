@@ -28,6 +28,7 @@ import { renderBoard, renderGuessList } from "./ui/board.ts";
 import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
+import { fetchHintsOverlay, applyHintsOverlay } from "./hintsOverlay.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -447,12 +448,14 @@ async function main() {
   const params = new URLSearchParams(location.search);
   const puzzleOverride = Number(params.get("puzzle"));
 
-  const [items, quotes, scheduleRaw] = await Promise.all([
+  const [items, quotes, scheduleRaw, hintsOverlay] = await Promise.all([
     loadJSON<Item[]>(import.meta.env.BASE_URL + "data/items.json"),
     loadJSON<Record<number, string>>(import.meta.env.BASE_URL + "data/quotes.json"),
     loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
+    fetchHintsOverlay(import.meta.env.VITE_STATS_WORKER_URL),
   ]);
   const schedule = migrateScheduleIfNeeded(scheduleRaw);
+  applyHintsOverlay(schedule, hintsOverlay);
 
   const puzzleNumber =
     Number.isFinite(puzzleOverride) && puzzleOverride > 0

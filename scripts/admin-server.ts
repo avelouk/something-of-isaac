@@ -7,7 +7,7 @@
  */
 
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Schedule } from "../src/puzzle.ts";
@@ -24,6 +24,50 @@ const ITEMS_PATH = resolve(ROOT, "public/data/items.json");
 
 const HOST = "127.0.0.1";
 const PORT = 8765;
+
+/**
+ * Minimal .env.local reader: KEY=VALUE per line, supports surrounding quotes,
+ * does not clobber pre-set env vars. Keeps the publish credentials out of git.
+ */
+function loadDotenvLocal(): void {
+  const path = resolve(ROOT, ".env.local");
+  if (!existsSync(path)) return;
+  for (const raw of readFileSync(path, "utf8").split("\n")) {
+    const m = raw.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    const [, key, val] = m;
+    if (key in process.env) continue;
+    process.env[key] = val.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+  }
+}
+loadDotenvLocal();
+
+const WORKER_URL = (process.env.WORKER_URL ?? "").replace(/\/$/, "");
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
+const PUBLISH_ENABLED = Boolean(WORKER_URL && ADMIN_TOKEN);
+
+type PublishResult = { status: "skipped" | "ok" | "failed"; error?: string };
+
+async function publishHintsToWorker(date: string, hints: string[]): Promise<PublishResult> {
+  if (!PUBLISH_ENABLED) return { status: "skipped" };
+  try {
+    const r = await fetch(`${WORKER_URL}/hints`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_TOKEN}`,
+      },
+      body: JSON.stringify({ date, hints }),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      return { status: "failed", error: `${r.status} ${text}`.trim().slice(0, 200) };
+    }
+    return { status: "ok" };
+  } catch (e) {
+    return { status: "failed", error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 function json(res: import("node:http").ServerResponse, status: number, body: unknown) {
   const buf = Buffer.from(JSON.stringify(body), "utf8");
@@ -79,6 +123,7 @@ createServer(async (req, res) => {
       json(res, 200, {
         todayUtc: utcTodayDateString(),
         hintCount: HINT_COUNT,
+        publishEnabled: PUBLISH_ENABLED,
       });
       return;
     }
@@ -139,7 +184,8 @@ createServer(async (req, res) => {
         );
 
         writeFileSync(SCHEDULE_PATH, JSON.stringify(schedule));
-        json(res, 200, { ok: true });
+        const publish = await publishHintsToWorker(date, body.hints);
+        json(res, 200, { ok: true, publish: publish.status, publishError: publish.error });
       } catch (e) {
         if (e instanceof SchedulePatchError) {
           json(res, e.statusCode, { ok: false, error: e.message });
@@ -161,4 +207,9 @@ createServer(async (req, res) => {
 }).listen(PORT, HOST, () => {
   console.log(`Schedule admin (local only): http://${HOST}:${PORT}`);
   console.log("Past UTC dates cannot be edited from this UI.");
+  if (PUBLISH_ENABLED) {
+    console.log(`Publishing hints to ${WORKER_URL}/hints on save.`);
+  } else {
+    console.log("Publish disabled — set WORKER_URL and ADMIN_TOKEN in .env.local to push to the worker.");
+  }
 });

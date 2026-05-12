@@ -14,3 +14,11 @@ class_name = "DailyRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DailyRoom"]
+
+# Hand-authored hint overrides keyed by UTC date. Create once with:
+#   npx wrangler kv namespace create HINTS_KV --config worker/wrangler.toml
+# then paste the returned id below. ADMIN_TOKEN (the write secret) is set with:
+#   npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.toml
+[[kv_namespaces]]
+binding = "HINTS_KV"
+id = "000705aa95034b32ad8e37e596993e6f"

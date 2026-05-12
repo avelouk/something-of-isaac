@@ -9,3 +9,8 @@ tsconfig.tsbuildinfo
 # Optional local prod env (worker URL for builds)
 .env.production
 .env.production.local
+
+# Local admin server publish credentials (WORKER_URL, ADMIN_TOKEN) and wrangler dev secrets.
+# These MUST NOT be committed — they're how only you can write to the live hints overlay.
+.env.local
+.dev.vars

@@ -6,7 +6,7 @@ const hintsWrapEl = document.getElementById("hints-wrap");
 const saveEl = document.getElementById("save");
 const statusEl = document.getElementById("status");
 
-/** @type {{ todayUtc: string; hintCount: number } | null} */
+/** @type {{ todayUtc: string; hintCount: number; publishEnabled: boolean } | null} */
 let meta = null;
 /** @type {{ version: number; salt: string; entries: { date: string; n: number; itemId: number; hash: string; hints?: string[] }[] } | null} */
 let schedule = null;
@@ -103,6 +103,12 @@ async function init() {
 
   bannersEl.replaceChildren();
   banner("ok", `UTC today: ${meta.todayUtc} — dates before this are read-only and cannot be saved.`);
+  if (!meta.publishEnabled) {
+    banner(
+      "warn",
+      "Publish to worker disabled — set WORKER_URL and ADMIN_TOKEN in .env.local. Saves will only update the local schedule.json.",
+    );
+  }
 
   dateEl.value = meta.todayUtc;
 
@@ -151,7 +157,13 @@ async function init() {
       });
       const out = await r.json();
       if (!out.ok) throw new Error(out.error || r.statusText);
-      statusEl.textContent = "Saved.";
+      if (out.publish === "ok") {
+        statusEl.textContent = "Saved locally and published to live worker.";
+      } else if (out.publish === "failed") {
+        statusEl.textContent = `Saved locally. Publish FAILED: ${out.publishError ?? "unknown error"}`;
+      } else {
+        statusEl.textContent = "Saved locally (publish skipped — set WORKER_URL + ADMIN_TOKEN in .env.local).";
+      }
       schedule = await fetch("/api/schedule").then((x) => x.json());
     } catch (e) {
       statusEl.textContent = e instanceof Error ? e.message : String(e);
