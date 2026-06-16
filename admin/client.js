@@ -84,10 +84,13 @@ function fillFromSchedule() {
   fillSelectOptions(name, entry.itemId);
 
   renderHints(meta.hintCount, entry.hints ?? []);
+  const hasHints = entry.hints?.some((h) => h.trim().length > 0);
   statusEl.textContent = locked
     ? "Read-only — this UTC date is in the past."
-    : entry.hints?.length
-      ? "Loaded hints from schedule."
+    : hasHints
+      ? meta.publishEnabled
+        ? "Loaded item and hints from worker."
+        : "Loaded from local schedule.json."
       : "No hints yet — fallback ladders apply until you save.";
 }
 
@@ -106,8 +109,10 @@ async function init() {
   if (!meta.publishEnabled) {
     banner(
       "warn",
-      "Publish to worker disabled — set WORKER_URL and ADMIN_TOKEN in .env.local. Saves will only update the local schedule.json.",
+      "Worker not configured — set WORKER_URL and ADMIN_TOKEN in .env.local. You will only see your local schedule.json, not your collaborator's edits.",
     );
+  } else {
+    banner("ok", "Schedule and hints load from the worker — you see the same data as your collaborator.");
   }
 
   dateEl.value = meta.todayUtc;
@@ -158,11 +163,11 @@ async function init() {
       const out = await r.json();
       if (!out.ok) throw new Error(out.error || r.statusText);
       if (out.publish === "ok") {
-        statusEl.textContent = "Saved locally and published to live worker.";
+        statusEl.textContent = "Saved locally and published to worker.";
       } else if (out.publish === "failed") {
         statusEl.textContent = `Saved locally. Publish FAILED: ${out.publishError ?? "unknown error"}`;
       } else {
-        statusEl.textContent = "Saved locally (publish skipped — set WORKER_URL + ADMIN_TOKEN in .env.local).";
+        statusEl.textContent = "Saved locally only (worker not configured in .env.local).";
       }
       schedule = await fetch("/api/schedule").then((x) => x.json());
     } catch (e) {

@@ -14,9 +14,9 @@ You see one hint about today's item. Type a guess — name, pickup quote, effect
 
 Each UTC day maps to one row in **`public/data/schedule.json`**: `date`, item id, optional **`hints`** (six strings), and a stable hash. **`npm run build:schedule`** fills two years of rows from a seeded weighted draw; re-running it preserves existing **`hints`** when the same date still resolves to the same item.
 
-**Authoring hand-written hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), item, and six hints. Past UTC dates are read-only there. On save the admin server (a) writes `schedule.json` locally as a backup, and (b) publishes the hints to the worker — so new hints appear on the live site within ~60s with no git push or redeploy. See **Live hints overlay** below for one-time setup.
+**Authoring hand-written hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), item, and six hints. Past UTC dates are read-only there. The UI loads item + hints from the worker (so collaborators see each other's work). On save it (a) writes `schedule.json` locally as a backup, and (b) publishes to the worker — so changes appear on the live site within ~60s with no git push or redeploy. See **Live schedule overlay** below for one-time setup.
 
-**Live hints overlay:** the deployed game fetches `GET /hints` from the stats worker in parallel with `schedule.json` and merges the published `{ date → hints[] }` map on top of the static schedule. If the worker is unreachable or no override exists for a date, the committed schedule.json (or item / auto fallbacks) is used. The worker route is public for reads; writes require a bearer token only you have.
+**Live schedule overlay:** the deployed game fetches `GET /hints` from the stats worker in parallel with `schedule.json` and merges the published `{ date → { hints, itemId? } }` map on top of the static schedule. If the worker is unreachable or no override exists for a date, the committed schedule.json (or item / auto fallbacks) is used. The worker route is public for reads; writes require a bearer token only you have.
 
 **Which hints the game shows** (`hintsForPuzzle` in `src/hints.ts`), in order:
 
@@ -45,7 +45,7 @@ We use a **SQLite-backed Durable Object** (required on **Workers Free**; same `c
 - Local worker: **`npm run dev:stats`**, then run Vite with `VITE_STATS_WORKER_URL=http://127.0.0.1:8787`.
 - **GitHub Actions:** add repository **Variable** **`VITE_STATS_WORKER_URL`** (same URL as the deployed worker) so production builds include it.
 
-The worker only exposes **`POST /visit`** to browsers (returns today’s unique player count). Coarse country totals are still stored server-side for possible future use and are not returned by any route right now.
+The worker exposes **`POST /visit`** to browsers (returns today’s unique player count). For **daily totals by UTC date** since you started logging, use **`GET /stats/history`** with the same **`ADMIN_TOKEN`** as hint writes — see **`worker/README.md`**.
 
 ### Hints overlay (one-time worker setup)
 

@@ -46,12 +46,25 @@ npm run dev:stats
 
 Temporarily set `VITE_STATS_WORKER_URL=http://127.0.0.1:8787` when running `npm run dev`.
 
-## Endpoint
+## Endpoints
 
 | Method | Path    | Purpose |
 |--------|---------|---------|
 | POST   | `/visit` | Body: `{ "visitorId": "<uuid>" }`. Counts at most once per visitor per UTC day. Returns `{ unique, newVisitor }`. |
+| GET    | `/stats/history?from=YYYY-MM-DD&to=YYYY-MM-DD` | **Bearer `ADMIN_TOKEN`** (same secret as `POST /hints`). Returns `{ from, to, days: [{ date, unique, countries }] }` for each UTC day in range. Days with no traffic show `unique: 0`. Max **400** days per request. |
 
-On each **new** visitor that UTC day, the Worker increments per-country buckets using Cloudflare geo (stored only inside the Durable Object — nothing reads them yet).
+On each **new** visitor that UTC day, the Worker increments per-country buckets using Cloudflare geo (stored in the DO; returned only on `/stats/history`, not on `/visit`).
 
-There is no authentication; the counter is public by design. Abuse could inflate counts; for a small puzzle game this is usually acceptable.
+There is no authentication on `/visit`; the counter is public by design. Abuse could inflate counts; for a small puzzle game this is usually acceptable.
+
+### Example: export daily uniques
+
+```bash
+export WORKER="https://something-of-isaac-stats.<you>.workers.dev"
+export TOKEN="your-admin-token"   # same as wrangler secret ADMIN_TOKEN
+
+curl -sS -G "$WORKER/stats/history" \
+  --data-urlencode "from=2026-01-01" \
+  --data-urlencode "to=2026-12-31" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```

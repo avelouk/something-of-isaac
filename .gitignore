@@ -1,6 +1,7 @@
 node_modules
 dist
 .DS_Store
+.mplconfig
 *.log
 .vite
 tsconfig.tsbuildinfo

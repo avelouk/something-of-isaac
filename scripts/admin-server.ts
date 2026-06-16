@@ -15,6 +15,7 @@ import { migrateScheduleIfNeeded, utcTodayDateString } from "../src/puzzle.ts";
 import type { ItemRow } from "./schedule-patch.ts";
 import { patchScheduleEntry, SchedulePatchError } from "./schedule-patch.ts";
 import { HINT_COUNT } from "../src/hints.ts";
+import { parseScheduleOverrides } from "../src/hintsOverlay.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -48,7 +49,37 @@ const PUBLISH_ENABLED = Boolean(WORKER_URL && ADMIN_TOKEN);
 
 type PublishResult = { status: "skipped" | "ok" | "failed"; error?: string };
 
-async function publishHintsToWorker(date: string, hints: string[]): Promise<PublishResult> {
+async function fetchWorkerOverrides(): Promise<Record<string, { hints: string[]; itemId?: number }>> {
+  if (!PUBLISH_ENABLED) return {};
+  try {
+    const r = await fetch(`${WORKER_URL}/hints`, { cache: "no-store" });
+    if (!r.ok) return {};
+    return parseScheduleOverrides(await r.json());
+  } catch {
+    return {};
+  }
+}
+
+function mergeWorkerOverrides(schedule: Schedule, overrides: Record<string, { hints: string[]; itemId?: number }>): void {
+  for (const entry of schedule.entries) {
+    const o = overrides[entry.date];
+    if (!o) continue;
+    entry.hints = o.hints;
+    if (typeof o.itemId === "number") entry.itemId = o.itemId;
+  }
+}
+
+async function loadScheduleForAdmin(): Promise<Schedule> {
+  const schedule = loadSchedule();
+  mergeWorkerOverrides(schedule, await fetchWorkerOverrides());
+  return schedule;
+}
+
+async function publishScheduleToWorker(
+  date: string,
+  itemId: number,
+  hints: string[],
+): Promise<PublishResult> {
   if (!PUBLISH_ENABLED) return { status: "skipped" };
   try {
     const r = await fetch(`${WORKER_URL}/hints`, {
@@ -57,7 +88,7 @@ async function publishHintsToWorker(date: string, hints: string[]): Promise<Publ
         "Content-Type": "application/json",
         Authorization: `Bearer ${ADMIN_TOKEN}`,
       },
-      body: JSON.stringify({ date, hints }),
+      body: JSON.stringify({ date, itemId, hints }),
     });
     if (!r.ok) {
       const text = await r.text().catch(() => "");
@@ -129,7 +160,7 @@ createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/schedule") {
-      json(res, 200, loadSchedule());
+      json(res, 200, await loadScheduleForAdmin());
       return;
     }
 
@@ -155,10 +186,11 @@ createServer(async (req, res) => {
         return;
       }
 
-      if (!Number.isFinite(body.itemId)) {
+      if (typeof body.itemId !== "number" || !Number.isFinite(body.itemId)) {
         json(res, 400, { ok: false, error: "missing or invalid itemId" });
         return;
       }
+      const itemId = body.itemId;
 
       if (!Array.isArray(body.hints) || body.hints.length !== HINT_COUNT) {
         json(res, 400, {
@@ -177,14 +209,14 @@ createServer(async (req, res) => {
           items,
           {
             date,
-            itemId: body.itemId,
+            itemId,
             hints: body.hints,
           },
           "admin save",
         );
 
         writeFileSync(SCHEDULE_PATH, JSON.stringify(schedule));
-        const publish = await publishHintsToWorker(date, body.hints);
+        const publish = await publishScheduleToWorker(date, itemId, body.hints);
         json(res, 200, { ok: true, publish: publish.status, publishError: publish.error });
       } catch (e) {
         if (e instanceof SchedulePatchError) {
@@ -208,7 +240,7 @@ createServer(async (req, res) => {
   console.log(`Schedule admin (local only): http://${HOST}:${PORT}`);
   console.log("Past UTC dates cannot be edited from this UI.");
   if (PUBLISH_ENABLED) {
-    console.log(`Publishing hints to ${WORKER_URL}/hints on save.`);
+    console.log(`Publishing schedule overrides to ${WORKER_URL}/hints on save.`);
   } else {
     console.log("Publish disabled — set WORKER_URL and ADMIN_TOKEN in .env.local to push to the worker.");
   }
