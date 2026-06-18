@@ -28,7 +28,7 @@ import { renderBoard, renderGuessList } from "./ui/board.ts";
 import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
-import { fetchHintsOverlay, applyHintsOverlay } from "./hintsOverlay.ts";
+import { fetchScheduleEntry, type PublicScheduleEntry } from "./scheduleFetch.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -448,22 +448,29 @@ async function main() {
   const params = new URLSearchParams(location.search);
   const puzzleOverride = Number(params.get("puzzle"));
 
-  const [items, quotes, scheduleRaw, hintsOverlay] = await Promise.all([
-    loadJSON<Item[]>(import.meta.env.BASE_URL + "data/items.json"),
-    loadJSON<Record<number, string>>(import.meta.env.BASE_URL + "data/quotes.json"),
-    loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
-    fetchHintsOverlay(import.meta.env.VITE_STATS_WORKER_URL),
-  ]);
-  const schedule = migrateScheduleIfNeeded(scheduleRaw);
-  applyHintsOverlay(schedule, hintsOverlay);
-
   const puzzleNumber =
     Number.isFinite(puzzleOverride) && puzzleOverride > 0
       ? puzzleOverride
       : getPuzzleNumber();
-  const entry = getEntryForPuzzle(schedule, puzzleNumber);
+
+  // The backend (SCHEDULE_KV) is the source of truth for the daily item + hints.
+  // The committed schedule.json is only an offline fallback, lazy-loaded so the full
+  // future schedule doesn't ship to every player on the happy path.
+  const [items, quotes, backendEntry] = await Promise.all([
+    loadJSON<Item[]>(import.meta.env.BASE_URL + "data/items.json"),
+    loadJSON<Record<number, string>>(import.meta.env.BASE_URL + "data/quotes.json"),
+    fetchScheduleEntry(import.meta.env.VITE_STATS_WORKER_URL, puzzleNumber),
+  ]);
+
+  let entry: PublicScheduleEntry | null = backendEntry;
   if (!entry) {
-    document.body.innerHTML = `<div class="app"><h1>No puzzle for #${puzzleNumber}</h1><p>The schedule covers ${schedule.entries.length} days. Come back tomorrow.</p></div>`;
+    const fallback = migrateScheduleIfNeeded(
+      await loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
+    );
+    entry = getEntryForPuzzle(fallback, puzzleNumber);
+  }
+  if (!entry) {
+    document.body.innerHTML = `<div class="app"><h1>No puzzle for #${puzzleNumber}</h1><p>Come back tomorrow.</p></div>`;
     return;
   }
   const answer = items.find((it) => it.id === entry.itemId);

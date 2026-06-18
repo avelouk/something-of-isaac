@@ -11,6 +11,7 @@
     "dev:stats": "wrangler dev --config worker/wrangler.toml",
     "build:items": "tsx scripts/build-items.ts",
     "build:schedule": "tsx scripts/build-schedule.ts",
+    "push:schedule": "tsx scripts/push-schedule-to-worker.ts",
     "download:sprites": "tsx scripts/download-sprites.ts",
     "localize:sprites": "tsx scripts/localize-item-images.ts",
     "selfhost:sprites": "npm run download:sprites && npm run localize:sprites",

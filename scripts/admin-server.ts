@@ -3,28 +3,31 @@
  *
  *   npm run admin
  *
- * Past UTC dates (strictly before today) are read-only and rejected on save.
+ * The schedule lives in the worker's SCHEDULE_KV (single source of truth). This server is
+ * a thin proxy that keeps the ADMIN_TOKEN server-side: it reads/writes the worker's
+ * authenticated /schedule endpoints and validates item ids against the local items.json
+ * (the worker has no item list). The worker enforces the past-date lock and recomputes the
+ * anti-cheat hash.
+ *
+ * Requires WORKER_URL and ADMIN_TOKEN in .env.local.
  */
 
 import { createServer } from "node:http";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Schedule } from "../src/puzzle.ts";
-import { migrateScheduleIfNeeded, utcTodayDateString } from "../src/puzzle.ts";
-import type { ItemRow } from "./schedule-patch.ts";
-import { patchScheduleEntry, SchedulePatchError } from "./schedule-patch.ts";
+import { utcTodayDateString } from "../src/puzzle.ts";
 import { HINT_COUNT } from "../src/hints.ts";
-import { parseScheduleOverrides } from "../src/hintsOverlay.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 const ADMIN_DIR = resolve(ROOT, "admin");
-const SCHEDULE_PATH = resolve(ROOT, "public/data/schedule.json");
 const ITEMS_PATH = resolve(ROOT, "public/data/items.json");
 
 const HOST = "127.0.0.1";
 const PORT = 8765;
+
+type ItemRow = { id: number; name: string };
 
 /**
  * Minimal .env.local reader: KEY=VALUE per line, supports surrounding quotes,
@@ -47,59 +50,6 @@ const WORKER_URL = (process.env.WORKER_URL ?? "").replace(/\/$/, "");
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 const PUBLISH_ENABLED = Boolean(WORKER_URL && ADMIN_TOKEN);
 
-type PublishResult = { status: "skipped" | "ok" | "failed"; error?: string };
-
-async function fetchWorkerOverrides(): Promise<Record<string, { hints: string[]; itemId?: number }>> {
-  if (!PUBLISH_ENABLED) return {};
-  try {
-    const r = await fetch(`${WORKER_URL}/hints`, { cache: "no-store" });
-    if (!r.ok) return {};
-    return parseScheduleOverrides(await r.json());
-  } catch {
-    return {};
-  }
-}
-
-function mergeWorkerOverrides(schedule: Schedule, overrides: Record<string, { hints: string[]; itemId?: number }>): void {
-  for (const entry of schedule.entries) {
-    const o = overrides[entry.date];
-    if (!o) continue;
-    entry.hints = o.hints;
-    if (typeof o.itemId === "number") entry.itemId = o.itemId;
-  }
-}
-
-async function loadScheduleForAdmin(): Promise<Schedule> {
-  const schedule = loadSchedule();
-  mergeWorkerOverrides(schedule, await fetchWorkerOverrides());
-  return schedule;
-}
-
-async function publishScheduleToWorker(
-  date: string,
-  itemId: number,
-  hints: string[],
-): Promise<PublishResult> {
-  if (!PUBLISH_ENABLED) return { status: "skipped" };
-  try {
-    const r = await fetch(`${WORKER_URL}/hints`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${ADMIN_TOKEN}`,
-      },
-      body: JSON.stringify({ date, itemId, hints }),
-    });
-    if (!r.ok) {
-      const text = await r.text().catch(() => "");
-      return { status: "failed", error: `${r.status} ${text}`.trim().slice(0, 200) };
-    }
-    return { status: "ok" };
-  } catch (e) {
-    return { status: "failed", error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
 function json(res: import("node:http").ServerResponse, status: number, body: unknown) {
   const buf = Buffer.from(JSON.stringify(body), "utf8");
   res.writeHead(status, {
@@ -111,10 +61,7 @@ function json(res: import("node:http").ServerResponse, status: number, body: unk
 
 function text(res: import("node:http").ServerResponse, status: number, mime: string, body: string) {
   const buf = Buffer.from(body, "utf8");
-  res.writeHead(status, {
-    "Content-Type": mime,
-    "Content-Length": buf.length,
-  });
+  res.writeHead(status, { "Content-Type": mime, "Content-Length": buf.length });
   res.end(buf);
 }
 
@@ -124,14 +71,21 @@ async function readBody(req: import("node:http").IncomingMessage): Promise<strin
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function loadSchedule(): Schedule {
-  let schedule = JSON.parse(readFileSync(SCHEDULE_PATH, "utf8")) as Schedule;
-  schedule = migrateScheduleIfNeeded(schedule);
-  return schedule;
-}
-
 function loadItems(): ItemRow[] {
   return JSON.parse(readFileSync(ITEMS_PATH, "utf8"));
+}
+
+/** Authenticated full-schedule read from the worker. */
+async function fetchSchedule(): Promise<unknown> {
+  const r = await fetch(`${WORKER_URL}/schedule`, {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    cache: "no-store",
+  });
+  if (!r.ok) {
+    const detail = await r.text().catch(() => "");
+    throw new Error(`worker /schedule ${r.status}: ${detail.slice(0, 200)}`);
+  }
+  return r.json();
 }
 
 createServer(async (req, res) => {
@@ -139,14 +93,12 @@ createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${HOST}`);
 
     if (req.method === "GET" && url.pathname === "/") {
-      const html = readFileSync(resolve(ADMIN_DIR, "index.html"), "utf8");
-      text(res, 200, "text/html; charset=utf-8", html);
+      text(res, 200, "text/html; charset=utf-8", readFileSync(resolve(ADMIN_DIR, "index.html"), "utf8"));
       return;
     }
 
     if (req.method === "GET" && url.pathname === "/client.js") {
-      const js = readFileSync(resolve(ADMIN_DIR, "client.js"), "utf8");
-      text(res, 200, "application/javascript; charset=utf-8", js);
+      text(res, 200, "application/javascript; charset=utf-8", readFileSync(resolve(ADMIN_DIR, "client.js"), "utf8"));
       return;
     }
 
@@ -159,18 +111,30 @@ createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/api/schedule") {
-      json(res, 200, await loadScheduleForAdmin());
+    if (req.method === "GET" && url.pathname === "/api/items") {
+      json(res, 200, loadItems().map((it) => ({ id: it.id, name: it.name })));
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/api/items") {
-      const items = loadItems().map((it) => ({ id: it.id, name: it.name }));
-      json(res, 200, items);
+    if (req.method === "GET" && url.pathname === "/api/schedule") {
+      if (!PUBLISH_ENABLED) {
+        json(res, 503, { error: "set WORKER_URL and ADMIN_TOKEN in .env.local" });
+        return;
+      }
+      try {
+        json(res, 200, await fetchSchedule());
+      } catch (e) {
+        json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      }
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/save") {
+      if (!PUBLISH_ENABLED) {
+        json(res, 503, { ok: false, error: "set WORKER_URL and ADMIN_TOKEN in .env.local" });
+        return;
+      }
+
       const raw = await readBody(req);
       let body: { date?: string; itemId?: number; hints?: string[] };
       try {
@@ -185,47 +149,37 @@ createServer(async (req, res) => {
         json(res, 400, { ok: false, error: "missing date" });
         return;
       }
-
       if (typeof body.itemId !== "number" || !Number.isFinite(body.itemId)) {
         json(res, 400, { ok: false, error: "missing or invalid itemId" });
         return;
       }
-      const itemId = body.itemId;
-
+      // The worker can't check this — it has no item list.
+      if (!loadItems().some((it) => it.id === body.itemId)) {
+        json(res, 400, { ok: false, error: `no item with id ${body.itemId}` });
+        return;
+      }
       if (!Array.isArray(body.hints) || body.hints.length !== HINT_COUNT) {
-        json(res, 400, {
-          ok: false,
-          error: `hints must be an array of ${HINT_COUNT} strings`,
-        });
+        json(res, 400, { ok: false, error: `hints must be an array of ${HINT_COUNT} strings` });
         return;
       }
 
       try {
-        let schedule = loadSchedule();
-        const items = loadItems();
-
-        patchScheduleEntry(
-          schedule,
-          items,
-          {
-            date,
-            itemId,
-            hints: body.hints,
-          },
-          "admin save",
-        );
-
-        writeFileSync(SCHEDULE_PATH, JSON.stringify(schedule));
-        const publish = await publishScheduleToWorker(date, itemId, body.hints);
-        json(res, 200, { ok: true, publish: publish.status, publishError: publish.error });
-      } catch (e) {
-        if (e instanceof SchedulePatchError) {
-          json(res, e.statusCode, { ok: false, error: e.message });
+        const r = await fetch(`${WORKER_URL}/schedule/entry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+          body: JSON.stringify({ date, itemId: body.itemId, hints: body.hints }),
+        });
+        const out = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!r.ok || !out.ok) {
+          json(res, r.status === 200 ? 502 : r.status, {
+            ok: false,
+            error: out.error ?? `worker /schedule/entry ${r.status}`,
+          });
           return;
         }
-        console.error(e);
-        const msg = e instanceof Error ? e.message : String(e);
-        json(res, 500, { ok: false, error: msg });
+        json(res, 200, { ok: true, publish: "ok" });
+      } catch (e) {
+        json(res, 502, { ok: false, error: e instanceof Error ? e.message : String(e) });
       }
       return;
     }
@@ -233,15 +187,14 @@ createServer(async (req, res) => {
     json(res, 404, { ok: false, error: "not found" });
   } catch (e) {
     console.error(e);
-    const msg = e instanceof Error ? e.message : String(e);
-    json(res, 500, { ok: false, error: msg });
+    json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
   }
 }).listen(PORT, HOST, () => {
   console.log(`Schedule admin (local only): http://${HOST}:${PORT}`);
-  console.log("Past UTC dates cannot be edited from this UI.");
+  console.log("Past UTC dates cannot be edited (the worker rejects them).");
   if (PUBLISH_ENABLED) {
-    console.log(`Publishing schedule overrides to ${WORKER_URL}/hints on save.`);
+    console.log(`Editing the schedule in ${WORKER_URL} (SCHEDULE_KV).`);
   } else {
-    console.log("Publish disabled — set WORKER_URL and ADMIN_TOKEN in .env.local to push to the worker.");
+    console.log("Set WORKER_URL and ADMIN_TOKEN in .env.local — the schedule lives in the worker now.");
   }
 });

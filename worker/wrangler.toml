@@ -15,10 +15,11 @@ class_name = "DailyRoom"
 tag = "v1"
 new_sqlite_classes = ["DailyRoom"]
 
-# Hand-authored hint overrides keyed by UTC date. Create once with:
-#   npx wrangler kv namespace create HINTS_KV --config worker/wrangler.toml
-# then paste the returned id below. ADMIN_TOKEN (the write secret) is set with:
+# Daily schedule (itemId + hints per UTC date) — single source of truth. Create once with:
+#   npx wrangler kv namespace create SCHEDULE_KV --config worker/wrangler.toml
+# then paste the returned id below. Seed it with `npm run push:schedule`.
+# ADMIN_TOKEN (the write secret) is set with:
 #   npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.toml
 [[kv_namespaces]]
-binding = "HINTS_KV"
-id = "000705aa95034b32ad8e37e596993e6f"
+binding = "SCHEDULE_KV"
+id = "82e4a8658a904367992885edf2c5272d"

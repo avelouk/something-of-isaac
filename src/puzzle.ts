@@ -6,8 +6,6 @@
  * Schedule rows include both `date` and `n` for lookups and display.
  */
 
-import seedrandom from "seedrandom";
-
 // Anchor date: when puzzle #1 began. Picked at launch and never moves.
 // 2026-05-02 UTC midnight — moving this later would shift every player's
 // streak, so don't.
@@ -79,39 +77,4 @@ export function migrateScheduleIfNeeded(raw: Schedule): Schedule {
 export function getEntryForPuzzle(schedule: Schedule, n: number): ScheduleEntry | null {
   const dateStr = puzzleNumberToUtcDateString(n);
   return schedule.entries.find((e) => e.date === dateStr) ?? schedule.entries.find((e) => e.n === n) ?? null;
-}
-
-/**
- * Seeded weighted draw used by build-schedule.ts. Exported here so the
- * algorithm lives next to getPuzzleNumber for readability.
- *
- * @param items   pool to draw from (must be deterministic order)
- * @param weights parallel array of positive weights
- * @param seed    string seed (we use `${salt}:${puzzleNumber}`)
- * @param exclude set of indices to forbid (the no-repeat lookback)
- */
-export function weightedDraw<T>(
-  items: T[],
-  weights: number[],
-  seed: string,
-  exclude: Set<number>,
-): { value: T; index: number } {
-  const rng = seedrandom(seed);
-  // Effective weights with excluded indices zeroed.
-  let total = 0;
-  for (let i = 0; i < items.length; i++) {
-    if (!exclude.has(i)) total += weights[i];
-  }
-  if (total <= 0) throw new Error("weightedDraw: all items excluded");
-  let r = rng() * total;
-  for (let i = 0; i < items.length; i++) {
-    if (exclude.has(i)) continue;
-    r -= weights[i];
-    if (r <= 0) return { value: items[i], index: i };
-  }
-  // Floating-point fallthrough: return last unexcluded.
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (!exclude.has(i)) return { value: items[i], index: i };
-  }
-  throw new Error("unreachable");
 }

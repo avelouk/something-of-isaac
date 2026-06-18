@@ -1,111 +1,255 @@
 /**
- * Generate data/schedule.json — a 2-year mapping of UTC calendar day → itemId.
+ * Generate data/schedule.json — UTC calendar day → itemId, with NO duplicates.
  *
- * Each row: { date, n, itemId, hash, hints? } where date is YYYY-MM-DD (UTC)
- * and n matches puzzleNumberToUtcDateString⁻¹ (see src/puzzle.ts).
+ * Rules:
+ * - Everything from launch through *today* (UTC) is preserved verbatim (item + hints).
+ *   Those puzzles have already been played; we never rewrite history.
+ * - The future is regenerated as a stream of shuffled "cycles". A cycle is a random
+ *   permutation in which every item appears exactly once, so an item never repeats
+ *   until the whole pool (719 items) has been used. The first future cycle is finished
+ *   off with only the items not yet shown in the preserved past, so across the first
+ *   ~719 days each item appears once. When the pool is exhausted we reshuffle and start
+ *   a fresh cycle (chosen by the user: loop forever).
+ * - On top of per-cycle uniqueness, no item may repeat within NO_REPEAT_DAYS (100) of
+ *   its previous appearance — this only bites at cycle boundaries and is enforced by a
+ *   greedy "skip anything used in the trailing window" placement.
+ * - sha256(itemId:salt:puzzleNumber) committed alongside each entry as cheap anti-cheat;
+ *   the same salt is kept so preserved rows keep their existing hash, and it matches the
+ *   worker's hashEntryAsync.
  *
- * - Weighted by item quality (well-known quality-2/3 items appear more
- *   often; obscure quality-0 items rarer).
- * - 14-day no-repeat lookback so players don't see the same item twice
- *   in a fortnight.
- * - sha256(itemId + salt + puzzleNumber) committed alongside each
- *   entry as cheap anti-cheat (devtools users still win — fine).
- * - Preserves hand-authored `hints` when date + itemId match the previous file.
+ * The base for the preserved past is the live backend if reachable (so authored hints
+ * survive repeated regenerations), else the committed schedule.json.
+ *
+ * After writing schedule.json (the offline fallback), seed the backend with
+ * `npm run push:schedule`.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { weightedDraw, puzzleNumberToUtcDateString } from "../src/puzzle.ts";
+import seedrandom from "seedrandom";
+import {
+  puzzleNumberToUtcDateString,
+  utcDateStringToPuzzleNumber,
+  utcTodayDateString,
+  type Schedule,
+  type ScheduleEntry,
+} from "../src/puzzle.ts";
 import { HINT_COUNT } from "../src/hints.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 
-const QUALITY_WEIGHT: Record<number, number> = {
-  0: 0.6,
-  1: 1.0,
-  2: 1.2,
-  3: 1.0,
-  4: 0.7,
-};
-
-const NO_REPEAT_WINDOW = 14;
-const TOTAL_DAYS = 365 * 2; // 2 years
+const NO_REPEAT_DAYS = 100; // no item may recur within this many days
+const TOTAL_DAYS = 365 * 5; // horizon (~5 years; loops through the pool as needed)
 const SCHEDULE_VERSION = 2;
 const SALT = "isaac-daily-guess-v1";
 
-type Item = { id: number; quality: number };
-
+// One file serves two roles: the offline fallback shipped to the client, and the seed
+// pushed to SCHEDULE_KV (`npm run push:schedule`).
 const SCHEDULE_PATH = resolve(ROOT, "public/data/schedule.json");
+const ITEMS_PATH = resolve(ROOT, "public/data/items.json");
 
-function loadHintsToPreserve(): Map<string, { itemId: number; hints: string[] }> {
-  const map = new Map<string, { itemId: number; hints: string[] }>();
-  if (!existsSync(SCHEDULE_PATH)) return map;
-  try {
-    const prev = JSON.parse(readFileSync(SCHEDULE_PATH, "utf8")) as {
-      entries?: { date?: string; n: number; itemId: number; hints?: string[] }[];
-    };
-    for (const e of prev.entries ?? []) {
-      if (!Array.isArray(e.hints) || e.hints.length !== HINT_COUNT) continue;
-      const dateKey = typeof e.date === "string" ? e.date : puzzleNumberToUtcDateString(e.n);
-      map.set(dateKey, { itemId: e.itemId, hints: e.hints });
-    }
-  } catch {
-    /* ignore corrupt schedule */
-  }
-  return map;
+type Item = { id: number };
+
+function hashEntry(itemId: number, n: number): string {
+  return createHash("sha256").update(`${itemId}:${SALT}:${n}`).digest("hex").slice(0, 16);
 }
 
-function main() {
-  const items: Item[] = JSON.parse(
-    readFileSync(resolve(ROOT, "public/data/items.json"), "utf8"),
-  );
-  items.sort((a, b) => a.id - b.id);
+function loadDotenvLocal(): void {
+  const path = resolve(ROOT, ".env.local");
+  if (!existsSync(path)) return;
+  for (const raw of readFileSync(path, "utf8").split("\n")) {
+    const m = raw.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    const [, key, val] = m;
+    if (key in process.env) continue;
+    process.env[key] = val.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+  }
+}
 
-  const weights = items.map((it) => QUALITY_WEIGHT[it.quality] ?? 1.0);
-  const recentIndices: number[] = [];
-  const preserveHints = loadHintsToPreserve();
+function validHints(h: unknown): h is string[] {
+  return Array.isArray(h) && h.length === HINT_COUNT && h.every((x) => typeof x === "string");
+}
 
-  const entries: {
-    date: string;
-    n: number;
-    itemId: number;
-    hash: string;
-    hints?: string[];
-  }[] = [];
+/**
+ * Best-effort overlay so authored hints/items survive a regeneration:
+ *   - authed GET /schedule  → the new KV store (repeat runs)
+ *   - public GET /hints      → the old overlay store (first migration only)
+ * Merges { itemId?, hints? } onto the base by date. Never throws.
+ */
+async function mergeLiveOverrides(base: Schedule): Promise<void> {
+  const workerUrl = (process.env.WORKER_URL ?? "").replace(/\/$/, "");
+  const token = process.env.ADMIN_TOKEN ?? "";
+  if (!workerUrl) return;
+  const byDate = new Map(base.entries.map((e) => [e.date, e]));
 
-  for (let n = 1; n <= TOTAL_DAYS; n++) {
-    const date = puzzleNumberToUtcDateString(n);
-    const exclude = new Set(recentIndices);
-    const { value, index } = weightedDraw(items, weights, `${SALT}:${n}`, exclude);
-    const itemId = value.id;
-    const hash = createHash("sha256").update(`${itemId}:${SALT}:${n}`).digest("hex").slice(0, 16);
-    const kept = preserveHints.get(date);
-    const hints =
-      kept && kept.itemId === itemId && kept.hints.length === HINT_COUNT ? kept.hints : undefined;
-    entries.push({ date, n, itemId, hash, ...(hints ? { hints } : {}) });
-    recentIndices.push(index);
-    if (recentIndices.length > NO_REPEAT_WINDOW) recentIndices.shift();
+  // New store (full schedule) — authoritative for already-stored rows.
+  if (token) {
+    try {
+      const r = await fetch(`${workerUrl}/schedule`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) {
+        const live = (await r.json()) as Schedule;
+        for (const e of live.entries ?? []) {
+          const cur = byDate.get(e.date);
+          if (!cur) continue;
+          cur.itemId = e.itemId;
+          if (validHints(e.hints)) cur.hints = e.hints;
+          else delete cur.hints;
+        }
+        console.log(`  merged ${live.entries?.length ?? 0} rows from backend /schedule`);
+        return;
+      }
+    } catch {
+      /* fall through to /hints */
+    }
   }
 
-  const schedule = { version: SCHEDULE_VERSION, salt: SALT, entries };
+  // Old overlay store — used for the one-time migration. The historical blob mixes two
+  // shapes: a bare hints array (oldest) and { hints, itemId? } (newer). Handle both, or
+  // the bare-array entries silently lose their authored hints.
+  try {
+    const r = await fetch(`${workerUrl}/hints`);
+    if (!r.ok) return;
+    const overrides = (await r.json()) as Record<string, unknown>;
+    let n = 0;
+    for (const [date, raw] of Object.entries(overrides)) {
+      const cur = byDate.get(date);
+      if (!cur) continue;
+      const hints = Array.isArray(raw) ? raw : (raw as { hints?: unknown })?.hints;
+      const itemId = Array.isArray(raw) ? undefined : (raw as { itemId?: unknown })?.itemId;
+      if (typeof itemId === "number" && Number.isFinite(itemId)) cur.itemId = itemId;
+      if (validHints(hints)) cur.hints = hints;
+      n++;
+    }
+    if (n) console.log(`  merged ${n} rows from legacy /hints overlay`);
+  } catch {
+    /* offline — fall back to committed schedule.json */
+  }
+}
+
+function shuffle<T>(arr: T[], seed: string): T[] {
+  const rng = seedrandom(seed);
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+async function main() {
+  loadDotenvLocal();
+
+  const items: Item[] = JSON.parse(readFileSync(ITEMS_PATH, "utf8"));
+  const allIds = items.map((it) => it.id).sort((a, b) => a - b);
+  const idSet = new Set(allIds);
+
+  const base = JSON.parse(readFileSync(SCHEDULE_PATH, "utf8")) as Schedule;
+  await mergeLiveOverrides(base);
+
+  const today = utcTodayDateString();
+  const todayN = utcDateStringToPuzzleNumber(today);
+  console.log(`Preserving puzzles #1..#${todayN} (through ${today}); regenerating the rest.`);
+
+  // Preserved past (date <= today), verbatim, sorted by n.
+  const baseByDate = new Map(base.entries.map((e) => [e.date, e]));
+  const entries: ScheduleEntry[] = [];
+  const seq: number[] = []; // itemId per day in order — for the trailing-window check
+  const pastItems = new Set<number>();
+
+  for (let n = 1; n <= todayN; n++) {
+    const date = puzzleNumberToUtcDateString(n);
+    const prev = baseByDate.get(date);
+    if (!prev || !idSet.has(prev.itemId)) {
+      throw new Error(`missing/invalid preserved entry for ${date} (#${n})`);
+    }
+    const e: ScheduleEntry = {
+      date,
+      n,
+      itemId: prev.itemId,
+      hash: hashEntry(prev.itemId, n),
+      ...(validHints(prev.hints) ? { hints: prev.hints } : {}),
+    };
+    entries.push(e);
+    seq.push(e.itemId);
+    pastItems.add(e.itemId);
+  }
+
+  // Future stream of shuffled cycles. Cycle 1 = items not yet shown in the past.
+  let cycle = 0;
+  let pool = shuffle(
+    allIds.filter((id) => !pastItems.has(id)),
+    `${SALT}:c1`,
+  );
+
+  const windowHas = (id: number): boolean => {
+    const start = Math.max(0, seq.length - NO_REPEAT_DAYS);
+    for (let i = start; i < seq.length; i++) if (seq[i] === id) return true;
+    return false;
+  };
+
+  for (let n = todayN + 1; n <= TOTAL_DAYS; n++) {
+    if (pool.length === 0) {
+      cycle++;
+      pool = shuffle(allIds, `${SALT}:c${cycle + 1}`);
+    }
+    // Greedy: first pooled item not used within the trailing NO_REPEAT_DAYS window.
+    // Within a cycle every item is unique, so the only blocked items are the previous
+    // cycle's tail; with a pool much larger than the window one is always available.
+    const pick = pool.findIndex((id) => !windowHas(id));
+    if (pick === -1) {
+      // Only possible if the item pool shrinks below ~NO_REPEAT_DAYS. Fail loudly
+      // rather than silently emit a duplicate / sub-window repeat.
+      throw new Error(
+        `cannot place puzzle #${n}: every remaining item (pool ${pool.length}) is within the ` +
+          `${NO_REPEAT_DAYS}-day window. Pool too small for the no-repeat rule.`,
+      );
+    }
+    const [itemId] = pool.splice(pick, 1);
+
+    const date = puzzleNumberToUtcDateString(n);
+    entries.push({ date, n, itemId, hash: hashEntry(itemId, n) });
+    seq.push(itemId);
+  }
+
+  const schedule: Schedule = { version: SCHEDULE_VERSION, salt: SALT, entries };
+
+  // --- self-check BEFORE writing anything ---
+  // Any repeat whose *later* occurrence is in the regenerated future must be > the
+  // window. Repeats entirely within the preserved past are pre-existing and allowed.
+  let minFutureGap = Infinity;
+  let pastDupCount = 0;
+  const lastSeen = new Map<number, number>();
+  for (let i = 0; i < entries.length; i++) {
+    const id = entries[i].itemId;
+    const prevIdx = lastSeen.get(id);
+    if (prevIdx !== undefined) {
+      const gap = i - prevIdx;
+      const laterIsFuture = i + 1 > todayN; // entry index i is puzzle #(i+1)
+      if (laterIsFuture) minFutureGap = Math.min(minFutureGap, gap);
+      else pastDupCount++;
+    }
+    lastSeen.set(id, i);
+  }
+  if (minFutureGap <= NO_REPEAT_DAYS) {
+    throw new Error(`future repeat gap ${minFutureGap} ≤ ${NO_REPEAT_DAYS} — generation bug, nothing written`);
+  }
+
   writeFileSync(SCHEDULE_PATH, JSON.stringify(schedule));
 
-  const counts: Record<number, number> = {};
-  for (const e of entries) counts[e.itemId] = (counts[e.itemId] ?? 0) + 1;
-  const distinct = Object.keys(counts).length;
-  const max = Math.max(...Object.values(counts));
-  const min = Math.min(...Object.values(counts));
-  console.log(`schedule v${SCHEDULE_VERSION}: ${entries.length} days, ${items.length} items in pool`);
-  console.log(`  distinct items used: ${distinct}/${items.length}`);
-  console.log(`  per-item appearances: min=${min} max=${max}`);
-  console.log(`  first 5 entries:`);
-  for (const e of entries.slice(0, 5)) {
-    const it = items.find((i) => i.id === e.itemId)!;
-    console.log(`    ${e.date} n=${e.n} -> #${it.id} Q${it.quality} hash=${e.hash}`);
-  }
+  const futureCount = entries.length - todayN;
+  console.log(`schedule v${SCHEDULE_VERSION}: ${entries.length} days (${todayN} preserved, ${futureCount} regenerated)`);
+  console.log(`  range: ${entries[0].date} .. ${entries.at(-1)!.date}`);
+  console.log(`  pool: ${allIds.length} items; smallest future repeat gap: ${minFutureGap} days (> ${NO_REPEAT_DAYS} ✓)`);
+  if (pastDupCount) console.log(`  preserved past contains ${pastDupCount} pre-existing repeat(s) — left untouched by design`);
+  console.log(`  → public/data/schedule.json (full schedule: fallback + \`npm run push:schedule\` seed)`);
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
