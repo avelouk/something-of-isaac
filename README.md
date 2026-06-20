@@ -12,15 +12,15 @@ You see one hint about today's item. Type a guess — name, pickup quote, effect
 
 ## Daily schedule & hints
 
-Each UTC day maps to one row in **`public/data/schedule.json`**: `date`, item id, optional **`hints`** (six strings), and a stable hash. **`npm run build:schedule`** fills two years of rows from a seeded weighted draw; re-running it preserves existing **`hints`** when the same date still resolves to the same item.
+The schedule lives in the **backend**. The worker's **`SCHEDULE_KV`** namespace is the single source of truth: each UTC day is one row — `date`, item id, optional **`hints`** (six strings), and a stable anti-cheat hash. The deployed game fetches just today's row from `GET /schedule/day?puzzle=<n>`; **`public/data/schedule.json`** is shipped only as an **offline fallback** if the worker is unreachable.
 
-**Authoring hand-written hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), item, and six hints. Past UTC dates are read-only there. The UI loads item + hints from the worker (so collaborators see each other's work). On save it (a) writes `schedule.json` locally as a backup, and (b) publishes to the worker — so changes appear on the live site within ~60s with no git push or redeploy. See **Live schedule overlay** below for one-time setup.
+**Generating the schedule:** **`npm run build:schedule`** rewrites `schedule.json` with **no duplicate items** — every item appears once per ~719-day cycle, then the pool reshuffles and loops, and no item recurs within **100 days**. Everything from launch through *today* (UTC) is preserved **verbatim** (item + hints); only the future is regenerated. Authored hints survive regeneration because the generator merges the live backend (`GET /schedule`) onto the base before writing. Push the result to the backend with **`npm run push:schedule`** (`PUT /schedule`).
 
-**Live schedule overlay:** the deployed game fetches `GET /hints` from the stats worker in parallel with `schedule.json` and merges the published `{ date → { hints, itemId? } }` map on top of the static schedule. If the worker is unreachable or no override exists for a date, the committed schedule.json (or item / auto fallbacks) is used. The worker route is public for reads; writes require a bearer token only you have.
+**Authoring items & hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), change the **answer item**, and edit the six hints. Past UTC dates are read-only (the worker rejects them with 403). The UI loads from and saves directly to the worker (`GET /api/schedule` → worker `GET /schedule`; `POST /api/save` → worker `POST /schedule/entry`), so both item and hints persist and changes appear on the live site within ~60s (cache TTL) — no git push or redeploy. See **Schedule store (one-time worker setup)** below.
 
 **Which hints the game shows** (`hintsForPuzzle` in `src/hints.ts`), in order:
 
-1. **`hints` on that day’s schedule row** — custom copy you added via admin or merged into JSON.
+1. **`hints` on that day’s schedule row** — custom copy you added via admin.
 2. Else **`customHints` on the item** in `items.json` (legacy per-item overrides).
 3. Else **auto-generated** six-step ladder from item metadata (quality, type, pools, DLC, first description sentence, pickup quote from `quotes.json`).
 
@@ -30,7 +30,7 @@ Each UTC day maps to one row in **`public/data/schedule.json`**: `date`, item id
 npm install
 npm run build:items  # one-time: items.json + quotes.json (see below)
 npm run dev          # http://localhost:5173/
-npm run admin        # optional: edit schedule + hints (writes schedule.json)
+npm run admin        # optional: edit the backend schedule (item + hints)
 ```
 
 You can also deploy a static build elsewhere (e.g. GitHub Pages at `https://<user>.github.io/something-of-isaac/`); set **`VITE_BASE`** if the base path differs. The share-to-clipboard line ends with the public URL **`https://avelouk.com/something-of-isaac/`** (see `SHARE_SITE_URL` in `src/share.ts`).
@@ -45,29 +45,30 @@ We use a **SQLite-backed Durable Object** (required on **Workers Free**; same `c
 - Local worker: **`npm run dev:stats`**, then run Vite with `VITE_STATS_WORKER_URL=http://127.0.0.1:8787`.
 - **GitHub Actions:** add repository **Variable** **`VITE_STATS_WORKER_URL`** (same URL as the deployed worker) so production builds include it.
 
-The worker exposes **`POST /visit`** to browsers (returns today’s unique player count). For **daily totals by UTC date** since you started logging, use **`GET /stats/history`** with the same **`ADMIN_TOKEN`** as hint writes — see **`worker/README.md`**.
+The worker exposes **`POST /visit`** to browsers (returns today’s unique player count). For **daily totals by UTC date** since you started logging, use **`GET /stats/history`** with the same **`ADMIN_TOKEN`** as schedule writes — see **`worker/README.md`**.
 
-### Hints overlay (one-time worker setup)
+### Schedule store (one-time worker setup)
 
-The worker also stores a small `{ date → hints[] }` map in **Workers KV** so you can publish new hints without committing/redeploying. Reads are public and edge-cached for 60s; writes are bearer-token gated.
+The same worker holds the daily schedule (item id + hints per UTC date) in the **`SCHEDULE_KV`** namespace. Per-day reads (`/schedule/day`, `/schedule/today`) are public and edge-cached for 60s and strip the hash; the full dump (`GET /schedule`) and all writes (`POST /schedule/entry`, `PUT /schedule`) are bearer-token gated.
 
-1. Create the KV namespace and paste its id into `worker/wrangler.toml` (replacing `REPLACE_WITH_KV_NAMESPACE_ID`):
+1. Create the KV namespace and paste its id into `worker/wrangler.toml`:
    ```sh
-   npx wrangler kv namespace create HINTS_KV --config worker/wrangler.toml
+   npx wrangler kv namespace create SCHEDULE_KV --config worker/wrangler.toml
    ```
 2. Generate a random admin token and store it as a worker secret:
    ```sh
    openssl rand -hex 32                                         # copy the output
    npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.toml   # paste it
    ```
-3. Deploy: **`npm run deploy:stats`**.
-4. Create **`.env.local`** in the repo root (already gitignored) so the local admin server can publish:
+3. Deploy the worker: **`npm run deploy:stats`**.
+4. Create **`.env.local`** in the repo root (already gitignored) for the admin server and `push:schedule`:
    ```sh
    WORKER_URL=https://something-of-isaac-stats.<your-subdomain>.workers.dev
    ADMIN_TOKEN=<same token you put as the worker secret>
    ```
+5. Seed the store from the generated file: **`npm run build:schedule`** then **`npm run push:schedule`**.
 
-After this, **`npm run admin`** writes locally **and** POSTs to `WORKER_URL/hints` on every save. The repo is safe to keep public: a fork that runs the admin gets a 401 from the worker because they don't have the token.
+After this, **`npm run admin`** reads from and writes straight to the worker. The repo is safe to keep public: a fork that runs the admin gets a 401 from the worker because they don't have the token.
 
 ## How `items.json` is built
 
