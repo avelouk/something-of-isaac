@@ -7,6 +7,7 @@
  *   /schedule*   — the daily schedule (see schedule.ts). SCHEDULE_KV is the single source of
  *                  truth for each day's itemId + hints; public reads return one past/today row,
  *                  authed reads/writes (bearer ADMIN_TOKEN) edit the store.
+ *   POST /feedback — player problem reports, forwarded to Telegram (see feedback.ts).
  *
  * Why KV for the schedule? The whole map is small (one JSON blob), read every page load.
  * Edge caching keeps origin reads near zero on the free plan; writes are rare (admin only).
@@ -18,12 +19,16 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { handleSchedule } from "./schedule.ts";
+import { handleFeedback } from "./feedback.ts";
 
 export interface Env {
   DAILY_STATS: DurableObjectNamespace;
   /** Single source of truth for the daily schedule (items + hints). */
   SCHEDULE_KV: KVNamespace;
   ADMIN_TOKEN: string;
+  /** Secrets for /feedback → Telegram (see feedback.ts). Unset = feedback disabled. */
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 /** Max UTC days per /stats/history request (avoid long CPU loops on free tier). */
@@ -188,6 +193,11 @@ export default {
 
     if (path === "/stats/history") {
       const res = await handleStatsHistory(request, env);
+      return withCors(res);
+    }
+
+    if (path === "/feedback") {
+      const res = await handleFeedback(request, env, json);
       return withCors(res);
     }
 

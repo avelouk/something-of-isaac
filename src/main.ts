@@ -28,6 +28,7 @@ import { renderBoard, renderGuessList } from "./ui/board.ts";
 import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
+import { showFeedbackModal } from "./feedback.ts";
 import { fetchScheduleEntry, type PublicScheduleEntry } from "./scheduleFetch.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
@@ -657,6 +658,9 @@ async function main() {
 
   $("btn-help").addEventListener("click", showHelpModal);
   $("btn-stats").addEventListener("click", () => showStatsPopover(loadStats()));
+  $("btn-feedback").addEventListener("click", () =>
+    showFeedbackModal(import.meta.env.VITE_STATS_WORKER_URL, puzzleNumber),
+  );
   btnViewResults.addEventListener("click", () => showResultModal(state, quotes));
 
   // Finished puzzle: sync stats, but do not auto-open the result modal (use VIEW RESULTS).
