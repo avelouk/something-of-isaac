@@ -3,6 +3,7 @@
  */
 
 import type { ScheduleEntry } from "./puzzle.ts";
+import { workerBase } from "./workerBase.ts";
 
 // The worker's public /schedule/day strips `hash` (anti-cheat), so the response is a
 // ScheduleEntry without it. Type it honestly — nothing on the client reads hash.
@@ -14,9 +15,9 @@ export async function fetchScheduleEntry(
   workerUrl: string | undefined,
   puzzleNumber: number,
 ): Promise<PublicScheduleEntry | null> {
-  if (!workerUrl) return null;
+  const base = workerBase(workerUrl);
+  if (!base) return null;
   try {
-    const base = workerUrl.replace(/\/$/, "");
     const r = await fetch(`${base}/schedule/day?puzzle=${puzzleNumber}`, {
       cache: "default",
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),

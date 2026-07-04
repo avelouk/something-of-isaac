@@ -44,6 +44,30 @@ export function utcTodayDateString(now: Date = new Date()): string {
   return `${y}-${mo}-${day}`;
 }
 
+/**
+ * True for a real YYYY-MM-DD UTC calendar date. Round-trips through Date.UTC
+ * because it silently normalizes overflow (2026-02-30 → March), so the regex
+ * alone is not enough.
+ */
+export function isValidIsoDate(s: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
+/** Lexicographic compare works for ISO dates: -1 / 0 / 1. */
+export function compareIsoDate(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Next UTC calendar day, YYYY-MM-DD. */
+export function addUtcDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
 export type ScheduleEntry = {
   /** UTC calendar day — canonical row identity (author imports use this). */
   date: string;

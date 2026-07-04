@@ -143,9 +143,3 @@ export function applyFinalChoice(
   state.finishedAt = now;
   return "lost";
 }
-
-export function score(state: GameState): number {
-  // Number of hints visible when correctly guessed.
-  // Lost games score HINT_COUNT.
-  return state.phase === "won" ? state.hintsRevealed : HINT_COUNT;
-}

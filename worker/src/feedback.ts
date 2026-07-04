@@ -14,9 +14,9 @@
  */
 
 import type { Env } from "./index.ts";
+import { FEEDBACK_MAX_CHARS } from "../../src/limits.ts";
+import { utcTodayDateString } from "../../src/puzzle.ts";
 
-/** Keep in sync with MESSAGE_MAX_CHARS in src/feedback.ts (client textarea maxLength). */
-const MESSAGE_MAX_CHARS = 1000;
 /** Soft cap on delivered reports per UTC day; beyond it we return 429. */
 const DAILY_CAP = 50;
 
@@ -44,12 +44,12 @@ export async function handleFeedback(
       : null;
 
   if (!message) return json({ error: "message required" }, 400);
-  if (message.length > MESSAGE_MAX_CHARS) {
-    return json({ error: `message too long (max ${MESSAGE_MAX_CHARS} chars)` }, 400);
+  if (message.length > FEEDBACK_MAX_CHARS) {
+    return json({ error: `message too long (max ${FEEDBACK_MAX_CHARS} chars)` }, 400);
   }
 
   // Soft cap: KV isn't atomic, but an approximate counter is enough here.
-  const day = new Date().toISOString().slice(0, 10);
+  const day = utcTodayDateString();
   const capKey = `feedback-count:${day}`;
   const count = Number((await env.SCHEDULE_KV.get(capKey)) ?? "0");
   if (count >= DAILY_CAP) return json({ error: "daily report limit reached" }, 429);

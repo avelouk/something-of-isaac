@@ -4,30 +4,12 @@
  * but sending fails gracefully.
  */
 
-/** Keep in sync with MESSAGE_MAX_CHARS in worker/src/feedback.ts (server-side reject). */
-const MESSAGE_MAX_CHARS = 1000;
+import { FEEDBACK_MAX_CHARS } from "./limits.ts";
+import { openModal } from "./ui/modal.ts";
+import { workerBase } from "./workerBase.ts";
 
 export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumber: number): void {
-  const root = document.getElementById("modal-root");
-  if (!root) return;
-  root.replaceChildren();
-
-  const dismiss = () => root.replaceChildren();
-
-  const bg = document.createElement("div");
-  bg.className = "modal-bg";
-  bg.addEventListener("click", dismiss);
-
-  const modal = document.createElement("div");
-  modal.className = "modal";
-  modal.addEventListener("click", (e) => e.stopPropagation());
-
-  const close = document.createElement("button");
-  close.className = "modal-close";
-  close.textContent = "✕";
-  close.setAttribute("aria-label", "Close");
-  close.addEventListener("click", dismiss);
-  modal.appendChild(close);
+  const { modal, dismiss } = openModal();
 
   const title = document.createElement("div");
   title.className = "modal-title";
@@ -41,7 +23,7 @@ export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumbe
 
   const textarea = document.createElement("textarea");
   textarea.className = "feedback-textarea";
-  textarea.maxLength = MESSAGE_MAX_CHARS;
+  textarea.maxLength = FEEDBACK_MAX_CHARS;
   textarea.rows = 5;
   textarea.placeholder = "What went wrong?";
   modal.appendChild(textarea);
@@ -64,7 +46,7 @@ export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumbe
       // Only auto-close if this modal is still the one on screen — the user
       // may have opened another modal (help/stats) before the timer fires.
       setTimeout(() => {
-        if (bg.isConnected) dismiss();
+        if (modal.isConnected) dismiss();
       }, 1200);
     } else {
       send.textContent = "FAILED — TRY AGAIN";
@@ -81,8 +63,6 @@ export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumbe
   btns.appendChild(cancel);
 
   modal.appendChild(btns);
-  bg.appendChild(modal);
-  root.appendChild(bg);
   textarea.focus();
 }
 
@@ -91,7 +71,7 @@ async function sendFeedback(
   message: string,
   puzzle: number,
 ): Promise<boolean> {
-  const base = workerBaseUrl?.trim().replace(/\/+$/, "");
+  const base = workerBase(workerBaseUrl);
   if (!base) return false;
   try {
     const res = await fetch(`${base}/feedback`, {

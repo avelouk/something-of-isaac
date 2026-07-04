@@ -10,6 +10,8 @@
 // Reuse the canonical epoch + date math so the worker can never drift from the
 // frontend's puzzle↔date mapping (a divergence would serve the wrong item silently).
 import {
+  compareIsoDate,
+  isValidIsoDate,
   puzzleNumberToUtcDateString,
   utcDateStringToPuzzleNumber,
   utcTodayDateString,
@@ -39,20 +41,6 @@ async function hashEntryAsync(itemId: number, salt: string, n: number): Promise<
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("")
     .slice(0, 16);
-}
-
-function isValidIsoDate(s: string): boolean {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return false;
-  // Round-trip so impossible calendar dates (2026-02-30, 2026-13-45) are rejected;
-  // Date.UTC silently normalizes overflow, so the regex alone is not enough.
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
-}
-
-function compareIsoDate(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function isValidHints(hints: unknown): hints is string[] {

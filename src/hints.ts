@@ -96,7 +96,7 @@ function hintsFromStrings(texts: string[]): Hint[] {
 }
 
 /** Metadata-only ladder (used when no hand-authored hints exist). */
-export function generateAutoHints(item: Item, pickupQuote = ""): Hint[] {
+function generateAutoHints(item: Item, pickupQuote = ""): Hint[] {
   return [
     { kind: "quality", text: `It's a Quality ${item.quality} item.` },
     { kind: "type", text: TYPE_TEXT[item.type] },

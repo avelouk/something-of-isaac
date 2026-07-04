@@ -314,9 +314,8 @@ body::before {
   gap: 8px;
   position: relative;
 }
-.guess-input {
-  flex: 1;
-  min-width: 0;
+.guess-input,
+.feedback-textarea {
   padding: 12px 14px;
   font-family: "Inter", sans-serif;
   font-size: 15px;
@@ -326,11 +325,17 @@ body::before {
   color: var(--ink);
   outline: none;
 }
-.guess-input:focus {
+.guess-input {
+  flex: 1;
+  min-width: 0;
+}
+.guess-input:focus,
+.feedback-textarea:focus {
   border-color: var(--blood);
   box-shadow: 0 0 0 3px rgba(176, 48, 40, 0.15);
 }
-.guess-input:disabled { background: #ece0c6; color: var(--ink-soft); }
+.guess-input:disabled,
+.feedback-textarea:disabled { background: #ece0c6; color: var(--ink-soft); }
 
 .guess-btn {
   padding: 0 20px;
@@ -777,7 +782,8 @@ body::before {
   .guess-row {
     gap: 6px;
   }
-  .guess-input {
+  .guess-input,
+  .feedback-textarea {
     font-size: 16px; /* prevents iOS zoom-on-focus */
     padding: 12px 12px;
   }
@@ -1043,26 +1049,13 @@ body::before {
   color: #6a544c;
 }
 
-/* FEEDBACK MODAL */
+/* FEEDBACK MODAL — shares the base input look with .guess-input above */
 .feedback-textarea {
   width: 100%;
   box-sizing: border-box;
   margin: 0 0 16px;
-  padding: 12px 14px;
-  font-family: "Inter", sans-serif;
-  font-size: 15px;
-  background: white;
-  border: 2px solid var(--ink);
-  border-radius: 3px;
-  color: var(--ink);
-  outline: none;
   resize: vertical;
 }
-.feedback-textarea:focus {
-  border-color: var(--blood);
-  box-shadow: 0 0 0 3px rgba(176, 48, 40, 0.15);
-}
-.feedback-textarea:disabled { background: #ece0c6; color: var(--ink-soft); }
 
 @media (max-width: 600px) {
   .support-h { font-size: 18px; letter-spacing: 1px; padding-top: 16px; margin-top: 20px; }

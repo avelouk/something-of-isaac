@@ -20,6 +20,12 @@
 
 import { handleSchedule } from "./schedule.ts";
 import { handleFeedback } from "./feedback.ts";
+import {
+  addUtcDay,
+  compareIsoDate,
+  isValidIsoDate,
+  utcTodayDateString,
+} from "../../src/puzzle.ts";
 
 export interface Env {
   DAILY_STATS: DurableObjectNamespace;
@@ -33,10 +39,6 @@ export interface Env {
 
 /** Max UTC days per /stats/history request (avoid long CPU loops on free tier). */
 const STATS_HISTORY_MAX_DAYS = 400;
-
-function utcDay(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function corsHeaders(): HeadersInit {
   return {
@@ -71,26 +73,6 @@ function constantTimeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
-}
-
-function isValidIsoDate(s: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return (
-    dt.getUTCFullYear() === y &&
-    dt.getUTCMonth() === m - 1 &&
-    dt.getUTCDate() === d
-  );
-}
-
-function compareIsoDate(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function addUtcDay(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
 function utcDaysInclusive(from: string, to: string): number {
@@ -178,34 +160,40 @@ export default {
       return new Response(null, { headers: corsHeaders() });
     }
 
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
+    // One catch for every route so a handler bug still yields a CORS-correct
+    // JSON error instead of a bare runtime 500.
+    try {
+      const url = new URL(request.url);
+      const path = url.pathname.replace(/\/+$/, "") || "/";
 
-    if (
-      path === "/schedule" ||
-      path === "/schedule/today" ||
-      path === "/schedule/day" ||
-      path.startsWith("/schedule/entry")
-    ) {
-      const res = await handleSchedule(request, env, ctx, json, (req) => isAuthorized(req, env), path);
+      if (
+        path === "/schedule" ||
+        path === "/schedule/today" ||
+        path === "/schedule/day" ||
+        path.startsWith("/schedule/entry")
+      ) {
+        const res = await handleSchedule(request, env, ctx, json, (req) => isAuthorized(req, env), path);
+        return withCors(res);
+      }
+
+      if (path === "/stats/history") {
+        const res = await handleStatsHistory(request, env);
+        return withCors(res);
+      }
+
+      if (path === "/feedback") {
+        const res = await handleFeedback(request, env, json);
+        return withCors(res);
+      }
+
+      const day = utcTodayDateString();
+      const id = env.DAILY_STATS.idFromName(day);
+      const stub = env.DAILY_STATS.get(id);
+      const res = await stub.fetch(request);
       return withCors(res);
+    } catch {
+      return json({ error: "internal error" }, 500);
     }
-
-    if (path === "/stats/history") {
-      const res = await handleStatsHistory(request, env);
-      return withCors(res);
-    }
-
-    if (path === "/feedback") {
-      const res = await handleFeedback(request, env, json);
-      return withCors(res);
-    }
-
-    const day = utcDay();
-    const id = env.DAILY_STATS.idFromName(day);
-    const stub = env.DAILY_STATS.get(id);
-    const res = await stub.fetch(request);
-    return withCors(res);
   },
 };
 

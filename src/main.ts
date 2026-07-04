@@ -25,6 +25,7 @@ import {
 import { loadProgress, saveProgress, recordResult, loadStats, type Stats } from "./storage.ts";
 import { attachAutocomplete, indexItems, type Searchable } from "./ui/autocomplete.ts";
 import { renderBoard, renderGuessList } from "./ui/board.ts";
+import { openModal } from "./ui/modal.ts";
 import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
@@ -201,38 +202,15 @@ function buildShareString(state: GameState): string {
 }
 
 function showResultModal(state: GameState, quotes: Record<number, string>) {
-  const root = $("modal-root");
-  root.replaceChildren();
-
   let countdownId: number | null = null;
-  const dismiss = () => {
-    if (countdownId !== null) {
-      clearInterval(countdownId);
-      countdownId = null;
-    }
-    document.removeEventListener("keydown", onEscape);
-    root.replaceChildren();
-  };
-
-  const onEscape = (e: KeyboardEvent) => {
-    if (e.key === "Escape") dismiss();
-  };
-  document.addEventListener("keydown", onEscape);
-
-  const bg = document.createElement("div");
-  bg.className = "modal-bg";
-  bg.addEventListener("click", dismiss);
-
-  const modal = document.createElement("div");
-  modal.className = "modal";
-  modal.addEventListener("click", (e) => e.stopPropagation());
-
-  const close = document.createElement("button");
-  close.className = "modal-close";
-  close.textContent = "✕";
-  close.setAttribute("aria-label", "Close");
-  close.addEventListener("click", dismiss);
-  modal.appendChild(close);
+  const { modal, dismiss } = openModal({
+    onClose: () => {
+      if (countdownId !== null) {
+        clearInterval(countdownId);
+        countdownId = null;
+      }
+    },
+  });
 
   const title = document.createElement("div");
   title.className = "modal-title" + (state.phase === "won" ? " win" : "");
@@ -320,28 +298,10 @@ function showResultModal(state: GameState, quotes: Record<number, string>) {
   updateNext();
   countdownId = window.setInterval(updateNext, 1000);
   modal.appendChild(next);
-
-  bg.appendChild(modal);
-  root.appendChild(bg);
 }
 
 function showHelpModal() {
-  const root = $("modal-root");
-  root.replaceChildren();
-  const bg = document.createElement("div");
-  bg.className = "modal-bg";
-  bg.addEventListener("click", () => root.replaceChildren());
-
-  const modal = document.createElement("div");
-  modal.className = "modal";
-  modal.addEventListener("click", (e) => e.stopPropagation());
-
-  const close = document.createElement("button");
-  close.className = "modal-close";
-  close.textContent = "✕";
-  close.setAttribute("aria-label", "Close");
-  close.addEventListener("click", () => root.replaceChildren());
-  modal.appendChild(close);
+  const { modal, dismiss } = openModal();
 
   const title = document.createElement("div");
   title.className = "modal-title";
@@ -378,28 +338,16 @@ function showHelpModal() {
   const ok = document.createElement("button");
   ok.className = "btn btn-primary";
   ok.textContent = "GOT IT";
-  ok.addEventListener("click", () => root.replaceChildren());
+  ok.addEventListener("click", dismiss);
   btns.appendChild(ok);
   modal.appendChild(btns);
-
-  bg.appendChild(modal);
-  root.appendChild(bg);
 }
 
 function showStatsPopover(stats: Stats) {
-  const root = $("modal-root");
-  root.replaceChildren();
-
-  const bg = document.createElement("div");
-  bg.className = "modal-bg";
-  bg.addEventListener("click", () => root.replaceChildren());
-
-  const pop = document.createElement("div");
-  pop.className = "stats-pop";
+  const { modal: pop, dismiss } = openModal({ className: "stats-pop", closeButton: false });
   pop.style.position = "static";
   pop.style.width = "100%";
   pop.style.maxWidth = "300px";
-  pop.addEventListener("click", (e) => e.stopPropagation());
 
   const title = document.createElement("div");
   title.className = "stats-title";
@@ -437,12 +385,9 @@ function showStatsPopover(stats: Stats) {
   closeBtn.style.fontSize = "14px";
   closeBtn.style.padding = "6px 12px";
   closeBtn.textContent = "CLOSE";
-  closeBtn.addEventListener("click", () => root.replaceChildren());
+  closeBtn.addEventListener("click", dismiss);
   closeRow.appendChild(closeBtn);
   pop.appendChild(closeRow);
-
-  bg.appendChild(pop);
-  root.appendChild(bg);
 }
 
 async function main() {

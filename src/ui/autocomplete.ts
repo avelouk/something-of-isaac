@@ -18,7 +18,11 @@
 
 import type { Item } from "../hints.ts";
 
-export type Searchable = Item & { pickupQuote: string; norm: string };
+/** Item plus its search fields pre-folded once at index time (see fold()). */
+export type Searchable = Item & {
+  pickupQuote: string;
+  folded: { name: string; pickup: string; tag: string; pools: string; desc: string };
+};
 
 const MAX_RESULTS = 8;
 
@@ -38,9 +42,13 @@ export function indexItems(items: Item[], quotes: Record<number, string>): Searc
     return {
       ...it,
       pickupQuote,
-      norm: fold(
-        [it.name, pickupQuote, it.primaryTag, it.pools.join(" "), it.description].join(" "),
-      ),
+      folded: {
+        name: fold(it.name),
+        pickup: fold(pickupQuote),
+        tag: fold(it.primaryTag),
+        pools: fold(it.pools.join(" ")),
+        desc: fold(it.description),
+      },
     };
   });
 }
@@ -53,11 +61,7 @@ export function search(items: Searchable[], queryRaw: string): Match[] {
 
   const out: Match[] = [];
   for (const it of items) {
-    const name = fold(it.name);
-    const pickup = fold(it.pickupQuote);
-    const tag = fold(it.primaryTag);
-    const pools = fold(it.pools.join(" "));
-    const desc = fold(it.description);
+    const { name, pickup, tag, pools, desc } = it.folded;
 
     let score = 0;
 

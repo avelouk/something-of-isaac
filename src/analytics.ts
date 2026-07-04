@@ -3,6 +3,8 @@
  * Uses a random UUID in localStorage — no accounts, no personal fields sent.
  */
 
+import { workerBase } from "./workerBase.ts";
+
 const VISITOR_KEY = "soi-visitor-id";
 
 function getVisitorId(): string {
@@ -23,7 +25,7 @@ function getVisitorId(): string {
  * and updates #daily-players from the worker response.
  */
 export async function initDailyStats(workerBaseUrl: string | undefined): Promise<void> {
-  const base = workerBaseUrl?.trim().replace(/\/+$/, "");
+  const base = workerBase(workerBaseUrl);
   if (!base) return;
 
   const el = document.getElementById("daily-players");
