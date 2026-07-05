@@ -15,8 +15,10 @@
     "download:sprites": "tsx scripts/download-sprites.ts",
     "localize:sprites": "tsx scripts/localize-item-images.ts",
     "selfhost:sprites": "npm run download:sprites && npm run localize:sprites",
-    "build:data": "npm run build:items && npm run build:schedule",
-    "admin": "tsx scripts/admin-server.ts"
+    "build:data": "npm run build:items && npm run refresh:wiki && npm run build:schedule",
+    "admin": "tsx scripts/admin-server.ts",
+    "build:ladders": "tsx scripts/generate-ladders.ts",
+    "refresh:wiki": "tsx scripts/wiki-refresh.ts"
   },
   "dependencies": {
     "seedrandom": "^3.0.5"

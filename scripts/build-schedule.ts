@@ -24,7 +24,7 @@
  * `npm run push:schedule`.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -37,6 +37,7 @@ import {
   type ScheduleEntry,
 } from "../src/puzzle.ts";
 import { HINT_COUNT } from "../src/hints.ts";
+import { loadDotenvLocal } from "./env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -55,18 +56,6 @@ type Item = { id: number };
 
 function hashEntry(itemId: number, n: number): string {
   return createHash("sha256").update(`${itemId}:${SALT}:${n}`).digest("hex").slice(0, 16);
-}
-
-function loadDotenvLocal(): void {
-  const path = resolve(ROOT, ".env.local");
-  if (!existsSync(path)) return;
-  for (const raw of readFileSync(path, "utf8").split("\n")) {
-    const m = raw.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (!m) continue;
-    const [, key, val] = m;
-    if (key in process.env) continue;
-    process.env[key] = val.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
-  }
 }
 
 function validHints(h: unknown): h is string[] {
@@ -142,7 +131,7 @@ function shuffle<T>(arr: T[], seed: string): T[] {
 }
 
 async function main() {
-  loadDotenvLocal();
+  loadDotenvLocal(ROOT);
 
   const items: Item[] = JSON.parse(readFileSync(ITEMS_PATH, "utf8"));
   const allIds = items.map((it) => it.id).sort((a, b) => a - b);

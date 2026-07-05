@@ -30,6 +30,7 @@ import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
 import { showFeedbackModal } from "./feedback.ts";
+import { endlessItemFor } from "./endless.ts";
 import { fetchScheduleEntry, type PublicScheduleEntry } from "./scheduleFetch.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
@@ -191,17 +192,23 @@ function nextResetCountdown(): string {
   return `${h}:${m}:${s}`;
 }
 
-function buildShareString(state: GameState): string {
+function buildShareString(state: GameState, label?: string): string {
   return shareString({
     won: state.phase === "won",
     hintsUsed: state.hintsRevealed,
     guessCount: state.guessIds.length,
     activeSeconds: state.activeSeconds,
     usedFinalChoice: state.usedFinalChoice,
+    label,
   });
 }
 
-function showResultModal(state: GameState, quotes: Record<number, string>) {
+/** endlessRound: null for the daily game, the round number in endless mode. */
+function showResultModal(
+  state: GameState,
+  quotes: Record<number, string>,
+  endlessRound: number | null = null,
+) {
   let countdownId: number | null = null;
   const { modal, dismiss } = openModal({
     onClose: () => {
@@ -251,14 +258,27 @@ function showResultModal(state: GameState, quotes: Record<number, string>) {
 
   const share = document.createElement("div");
   share.className = "share-block";
-  share.textContent = buildShareString(state);
+  share.textContent = buildShareString(
+    state,
+    endlessRound ? `Endless #${endlessRound}` : undefined,
+  );
   modal.appendChild(share);
 
   const btns = document.createElement("div");
   btns.className = "modal-btns";
 
+  if (endlessRound) {
+    const next = document.createElement("button");
+    next.className = "btn btn-primary";
+    next.textContent = "NEXT ITEM →";
+    next.addEventListener("click", () => {
+      location.search = `?endless=${endlessRound + 1}`;
+    });
+    btns.appendChild(next);
+  }
+
   const copyBtn = document.createElement("button");
-  copyBtn.className = "btn btn-primary";
+  copyBtn.className = endlessRound ? "btn btn-secondary" : "btn btn-primary";
   copyBtn.textContent = "COPY RESULTS";
   copyBtn.addEventListener("click", async () => {
     const ok = await copyToClipboard(share.textContent ?? "");
@@ -282,6 +302,16 @@ function showResultModal(state: GameState, quotes: Record<number, string>) {
   closeModalBtn.addEventListener("click", dismiss);
   btns.appendChild(closeModalBtn);
 
+  if (!endlessRound) {
+    const endlessBtn = document.createElement("button");
+    endlessBtn.className = "btn btn-secondary";
+    endlessBtn.textContent = "∞ ENDLESS";
+    endlessBtn.addEventListener("click", () => {
+      location.search = "?endless=1";
+    });
+    btns.appendChild(endlessBtn);
+  }
+
   modal.appendChild(btns);
 
   const supportWrap = document.createElement("div");
@@ -292,12 +322,14 @@ function showResultModal(state: GameState, quotes: Record<number, string>) {
   supportWrap.appendChild(supportA);
   modal.appendChild(supportWrap);
 
-  const next = document.createElement("div");
-  next.className = "next-room";
-  const updateNext = () => (next.textContent = `NEXT ITEM IN ${nextResetCountdown()}`);
-  updateNext();
-  countdownId = window.setInterval(updateNext, 1000);
-  modal.appendChild(next);
+  if (!endlessRound) {
+    const next = document.createElement("div");
+    next.className = "next-room";
+    const updateNext = () => (next.textContent = `NEXT ITEM IN ${nextResetCountdown()}`);
+    updateNext();
+    countdownId = window.setInterval(updateNext, 1000);
+    modal.appendChild(next);
+  }
 }
 
 function showHelpModal() {
@@ -399,48 +431,78 @@ async function main() {
       ? puzzleOverride
       : getPuzzleNumber();
 
+  // Endless mode: ?endless=N plays round N of a fixed item permutation,
+  // hints from ladders.json, nothing persisted (reload-per-round v1).
+  const endlessRaw = params.get("endless");
+  const endlessRound =
+    endlessRaw !== null ? Math.max(1, Math.trunc(Number(endlessRaw)) || 1) : 0;
+  const isEndless = endlessRound > 0;
+
   // The backend (SCHEDULE_KV) is the source of truth for the daily item + hints.
   // The committed schedule.json is only an offline fallback, lazy-loaded so the full
   // future schedule doesn't ship to every player on the happy path.
-  const [items, quotes, backendEntry] = await Promise.all([
+  const [items, quotes, backendEntry, ladders] = await Promise.all([
     loadJSON<Item[]>(import.meta.env.BASE_URL + "data/items.json"),
     loadJSON<Record<number, string>>(import.meta.env.BASE_URL + "data/quotes.json"),
-    fetchScheduleEntry(import.meta.env.VITE_STATS_WORKER_URL, puzzleNumber),
+    isEndless ? null : fetchScheduleEntry(import.meta.env.VITE_STATS_WORKER_URL, puzzleNumber),
+    isEndless
+      ? loadJSON<Record<string, string[]>>(import.meta.env.BASE_URL + "data/ladders.json").catch(
+          () => ({}) as Record<string, string[]>,
+        )
+      : ({} as Record<string, string[]>),
   ]);
 
-  let entry: PublicScheduleEntry | null = backendEntry;
-  if (!entry) {
-    const fallback = migrateScheduleIfNeeded(
-      await loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
-    );
-    entry = getEntryForPuzzle(fallback, puzzleNumber);
+  let answer: Item | undefined;
+  let entryHints: string[] | undefined;
+  if (isEndless) {
+    answer = endlessItemFor(items, endlessRound);
+    entryHints = ladders[String(answer.id)];
+  } else {
+    let entry: PublicScheduleEntry | null = backendEntry;
+    if (!entry) {
+      const fallback = migrateScheduleIfNeeded(
+        await loadJSON<Schedule>(import.meta.env.BASE_URL + "data/schedule.json"),
+      );
+      entry = getEntryForPuzzle(fallback, puzzleNumber);
+    }
+    if (!entry) {
+      document.body.innerHTML = `<div class="app"><h1>No puzzle for #${puzzleNumber}</h1><p>Come back tomorrow.</p></div>`;
+      return;
+    }
+    answer = items.find((it) => it.id === entry.itemId);
+    entryHints = entry.hints;
   }
-  if (!entry) {
-    document.body.innerHTML = `<div class="app"><h1>No puzzle for #${puzzleNumber}</h1><p>Come back tomorrow.</p></div>`;
-    return;
-  }
-  const answer = items.find((it) => it.id === entry.itemId);
   if (!answer) {
     document.body.innerHTML = `<div class="app"><h1>Item missing</h1></div>`;
     return;
   }
 
   const indexed = indexItems(items, quotes);
-  const existing = loadProgress(puzzleNumber);
+  const existing = isEndless ? null : loadProgress(puzzleNumber);
   const state: GameState = existing
     ? fromProgress(existing, answer)
-    : newGame(puzzleNumber, answer);
-  saveProgress(toProgress(state));
+    : newGame(isEndless ? endlessRound : puzzleNumber, answer);
+  const persist = () => {
+    if (!isEndless) saveProgress(toProgress(state));
+  };
+  persist();
 
   $("brand-sub").textContent = formatBrandSub();
-  $("puzzle-number").textContent = `PUZZLE #${puzzleNumber}`;
+  $("puzzle-number").textContent = isEndless
+    ? `ENDLESS #${endlessRound}`
+    : `PUZZLE #${puzzleNumber}`;
+  if (isEndless) {
+    const modeLink = $("mode-link") as HTMLAnchorElement;
+    modeLink.textContent = "← BACK TO DAILY";
+    modeLink.href = location.pathname;
+  }
   void initDailyStats(import.meta.env.VITE_STATS_WORKER_URL);
   const stopTimer = startElapsedTimer($("utc-clock"), state, () => {
     // Persist active-time on each tick so a reload resumes from the same point.
-    saveProgress(toProgress(state));
+    persist();
   });
 
-  const hints = hintsForPuzzle(entry.hints, answer, quotes[answer.id]);
+  const hints = hintsForPuzzle(entryHints, answer, quotes[answer.id]);
   const board = $("hints");
   const heroFrame = $("hero-frame");
   const hintHelp = $("hint-help");
@@ -548,7 +610,7 @@ async function main() {
     if (!pendingItem) return;
     const outcome = applyGuess(state, pendingItem.id);
     if (outcome === "ignored") return;
-    saveProgress(toProgress(state));
+    persist();
     input.value = "";
     pendingItem = null;
     refresh();
@@ -575,13 +637,14 @@ async function main() {
   function commitFinalChoice(it: Item) {
     if (state.phase !== "multipleChoice") return;
     applyFinalChoice(state, it.id);
-    saveProgress(toProgress(state));
+    persist();
     refresh();
     if (isFinished(state)) finalize();
   }
 
-  function finalize() {
-    stopTimer();
+  // Daily results feed streaks/stats; endless rounds are never recorded.
+  function recordDailyResult() {
+    if (isEndless) return;
     recordResult(
       {
         puzzleNumber: state.puzzleNumber,
@@ -593,7 +656,12 @@ async function main() {
       },
       state.puzzleNumber,
     );
-    showResultModal(state, quotes);
+  }
+
+  function finalize() {
+    stopTimer();
+    recordDailyResult();
+    showResultModal(state, quotes, isEndless ? endlessRound : null);
   }
 
   submit.addEventListener("click", commitGuess);
@@ -603,25 +671,22 @@ async function main() {
 
   $("btn-help").addEventListener("click", showHelpModal);
   $("btn-stats").addEventListener("click", () => showStatsPopover(loadStats()));
-  $("btn-feedback").addEventListener("click", () =>
-    showFeedbackModal(import.meta.env.VITE_STATS_WORKER_URL, puzzleNumber),
+  $("btn-feedback").addEventListener("click", (e) => {
+    e.preventDefault();
+    showFeedbackModal(
+      import.meta.env.VITE_STATS_WORKER_URL,
+      puzzleNumber,
+      isEndless ? `[Endless #${endlessRound}] ` : "",
+    );
+  });
+  btnViewResults.addEventListener("click", () =>
+    showResultModal(state, quotes, isEndless ? endlessRound : null),
   );
-  btnViewResults.addEventListener("click", () => showResultModal(state, quotes));
 
   // Finished puzzle: sync stats, but do not auto-open the result modal (use VIEW RESULTS).
   if (isFinished(state)) {
     stopTimer();
-    recordResult(
-      {
-        puzzleNumber: state.puzzleNumber,
-        won: state.phase === "won",
-        hintsUsed: state.hintsRevealed,
-        guesses: state.guessIds.length,
-        finishedAt: state.finishedAt ?? Date.now(),
-        activeSeconds: state.activeSeconds,
-      },
-      state.puzzleNumber,
-    );
+    recordDailyResult();
   }
 }
 

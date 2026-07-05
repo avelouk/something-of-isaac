@@ -26,7 +26,7 @@ export type Searchable = Item & {
 
 const MAX_RESULTS = 8;
 
-function fold(s: string): string {
+export function fold(s: string): string {
   return s
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")

@@ -13,11 +13,12 @@
  */
 
 import { createServer } from "node:http";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { utcTodayDateString } from "../src/puzzle.ts";
 import { HINT_COUNT } from "../src/hints.ts";
+import { loadDotenvLocal } from "./env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -29,22 +30,7 @@ const PORT = 8765;
 
 type ItemRow = { id: number; name: string };
 
-/**
- * Minimal .env.local reader: KEY=VALUE per line, supports surrounding quotes,
- * does not clobber pre-set env vars. Keeps the publish credentials out of git.
- */
-function loadDotenvLocal(): void {
-  const path = resolve(ROOT, ".env.local");
-  if (!existsSync(path)) return;
-  for (const raw of readFileSync(path, "utf8").split("\n")) {
-    const m = raw.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (!m) continue;
-    const [, key, val] = m;
-    if (key in process.env) continue;
-    process.env[key] = val.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
-  }
-}
-loadDotenvLocal();
+loadDotenvLocal(ROOT);
 
 const WORKER_URL = (process.env.WORKER_URL ?? "").replace(/\/$/, "");
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";

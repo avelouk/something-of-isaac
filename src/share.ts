@@ -41,6 +41,8 @@ export function shareString(opts: {
   guessCount: number;
   activeSeconds: number;
   usedFinalChoice: boolean;
+  /** Heading suffix; defaults to today's UTC date (endless mode passes "Endless #N"). */
+  label?: string;
 }) {
   const { won, hintsUsed, guessCount, activeSeconds, usedFinalChoice } = opts;
   let bar = "";
@@ -54,7 +56,7 @@ export function shareString(opts: {
   const tries = `${guessCount} ${guessCount === 1 ? "try" : "tries"}`;
   const mc = usedFinalChoice ? " 🎯" : "";
   const time = `⏱ ${formatTime(activeSeconds)}`;
-  return `Something of Isaac · ${formatDate()}\n${mark} ${score} hints · ${tries}${mc}\n${bar}  ${time}\n${SHARE_SITE_URL}`;
+  return `Something of Isaac · ${opts.label ?? formatDate()}\n${mark} ${score} hints · ${tries}${mc}\n${bar}  ${time}\n${SHARE_SITE_URL}`;
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

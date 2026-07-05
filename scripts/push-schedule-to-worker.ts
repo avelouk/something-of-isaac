@@ -11,25 +11,14 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Schedule } from "../src/puzzle.ts";
 import { migrateScheduleIfNeeded } from "../src/puzzle.ts";
+import { loadDotenvLocal } from "./env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 const SCHEDULE_PATH = resolve(ROOT, "public/data/schedule.json");
 
-function loadDotenvLocal(): void {
-  const path = resolve(ROOT, ".env.local");
-  if (!existsSync(path)) return;
-  for (const raw of readFileSync(path, "utf8").split("\n")) {
-    const m = raw.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (!m) continue;
-    const [, key, val] = m;
-    if (key in process.env) continue;
-    process.env[key] = val.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
-  }
-}
-
 async function main() {
-  loadDotenvLocal();
+  loadDotenvLocal(ROOT);
   const workerUrl = (process.env.WORKER_URL ?? "").replace(/\/$/, "");
   const token = process.env.ADMIN_TOKEN ?? "";
   if (!workerUrl || !token) {

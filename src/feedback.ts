@@ -8,7 +8,12 @@ import { FEEDBACK_MAX_CHARS } from "./limits.ts";
 import { openModal } from "./ui/modal.ts";
 import { workerBase } from "./workerBase.ts";
 
-export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumber: number): void {
+export function showFeedbackModal(
+  workerBaseUrl: string | undefined,
+  puzzleNumber: number,
+  /** Prepended to the message so endless-mode reports carry their context. */
+  messagePrefix = "",
+): void {
   const { modal, dismiss } = openModal();
 
   const title = document.createElement("div");
@@ -23,7 +28,8 @@ export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumbe
 
   const textarea = document.createElement("textarea");
   textarea.className = "feedback-textarea";
-  textarea.maxLength = FEEDBACK_MAX_CHARS;
+  // Reserve room for the prefix — the worker rejects prefix+message over the cap.
+  textarea.maxLength = FEEDBACK_MAX_CHARS - messagePrefix.length;
   textarea.rows = 5;
   textarea.placeholder = "What went wrong?";
   modal.appendChild(textarea);
@@ -40,7 +46,7 @@ export function showFeedbackModal(workerBaseUrl: string | undefined, puzzleNumbe
     send.disabled = true;
     send.textContent = "SENDING…";
     textarea.disabled = true;
-    const ok = await sendFeedback(workerBaseUrl, message, puzzleNumber);
+    const ok = await sendFeedback(workerBaseUrl, messagePrefix + message, puzzleNumber);
     if (ok) {
       send.textContent = "SENT ✓ THANKS";
       // Only auto-close if this modal is still the one on screen — the user
