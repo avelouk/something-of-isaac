@@ -10,6 +10,7 @@
 
 const SCHEMA_KEY = "idg:schema";
 const STATS_KEY = "idg:stats";
+const ENDLESS_KEY = "idg:endless";
 const PROGRESS_PREFIX = "idg:p:";
 const SCHEMA_VERSION = 4;
 
@@ -41,6 +42,11 @@ export type Stats = {
   currentStreak: number;
   bestStreak: number;
   history: ResultRecord[];
+};
+
+export type EndlessProgress = {
+  /** Round to serve when re-entering endless mode. */
+  nextRound: number;
 };
 
 const EMPTY_STATS: Stats = {
@@ -94,6 +100,24 @@ export function saveProgress(p: Progress) {
 export function loadStats(): Stats {
   ensureSchema();
   return readJSON<Stats>(STATS_KEY) ?? { ...EMPTY_STATS };
+}
+
+export function loadEndless(): EndlessProgress {
+  ensureSchema();
+  const raw = readJSON<EndlessProgress & { playedIds?: number[] }>(ENDLESS_KEY);
+  if (!raw) return { nextRound: 1 };
+  if (Array.isArray(raw.playedIds)) {
+    return { nextRound: raw.playedIds.length + 1 };
+  }
+  return { nextRound: raw.nextRound > 0 ? raw.nextRound : 1 };
+}
+
+export function markEndlessRoundComplete(round: number) {
+  ensureSchema();
+  const progress = loadEndless();
+  if (round < progress.nextRound) return;
+  progress.nextRound = round + 1;
+  writeJSON(ENDLESS_KEY, progress);
 }
 
 export function recordResult(record: ResultRecord, currentPuzzle: number) {

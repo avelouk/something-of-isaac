@@ -19,3 +19,9 @@ export function endlessItemFor(items: Item[], round: number): Item {
   shuffleInPlace(unique, seedrandom("endless-v1"));
   return unique[(round - 1) % unique.length];
 }
+
+/** Resume where the player left off when re-entering via ?endless=1. */
+export function effectiveEndlessRound(urlRound: number, nextRound: number): number {
+  if (urlRound === 1 && nextRound > 1) return nextRound;
+  return urlRound;
+}

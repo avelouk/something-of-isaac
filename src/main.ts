@@ -22,7 +22,15 @@ import {
   migrateScheduleIfNeeded,
   type Schedule,
 } from "./puzzle.ts";
-import { loadProgress, saveProgress, recordResult, loadStats, type Stats } from "./storage.ts";
+import {
+  loadEndless,
+  loadProgress,
+  loadStats,
+  markEndlessRoundComplete,
+  recordResult,
+  saveProgress,
+  type Stats,
+} from "./storage.ts";
 import { attachAutocomplete, indexItems, type Searchable } from "./ui/autocomplete.ts";
 import { renderBoard, renderGuessList } from "./ui/board.ts";
 import { openModal } from "./ui/modal.ts";
@@ -30,7 +38,7 @@ import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
 import { showFeedbackModal } from "./feedback.ts";
-import { endlessItemFor } from "./endless.ts";
+import { effectiveEndlessRound, endlessItemFor } from "./endless.ts";
 import { fetchScheduleEntry, type PublicScheduleEntry } from "./scheduleFetch.ts";
 
 async function loadJSON<T>(path: string): Promise<T> {
@@ -431,12 +439,14 @@ async function main() {
       ? puzzleOverride
       : getPuzzleNumber();
 
-  // Endless mode: ?endless=N plays round N of a fixed item permutation,
-  // hints from ladders.json, nothing persisted (reload-per-round v1).
+  // Endless mode: ?endless=N plays round N of a fixed item permutation.
   const endlessRaw = params.get("endless");
-  const endlessRound =
+  const endlessUrlRound =
     endlessRaw !== null ? Math.max(1, Math.trunc(Number(endlessRaw)) || 1) : 0;
-  const isEndless = endlessRound > 0;
+  const isEndless = endlessUrlRound > 0;
+  const endlessRound = isEndless
+    ? effectiveEndlessRound(endlessUrlRound, loadEndless().nextRound)
+    : 0;
 
   // The backend (SCHEDULE_KV) is the source of truth for the daily item + hints.
   // The committed schedule.json is only an offline fallback, lazy-loaded so the full
@@ -642,9 +652,11 @@ async function main() {
     if (isFinished(state)) finalize();
   }
 
-  // Daily results feed streaks/stats; endless rounds are never recorded.
   function recordDailyResult() {
-    if (isEndless) return;
+    if (isEndless) {
+      markEndlessRoundComplete(endlessRound);
+      return;
+    }
     recordResult(
       {
         puzzleNumber: state.puzzleNumber,
