@@ -10,7 +10,7 @@
   <body>
     <div class="app">
       <header class="topbar">
-        <div class="brand">
+        <a class="brand brand-link" href="./" aria-label="Back to today's puzzle">
           <img
             class="brand-mark"
             src="./img/questionmark_logo.png"
@@ -23,7 +23,7 @@
             <div class="brand-name">SOMETHING<span class="accent"> OF ISAAC</span></div>
             <div class="brand-sub" id="brand-sub"></div>
           </div>
-        </div>
+        </a>
         <div class="icon-row">
           <button class="iconbtn" id="btn-stats" title="Stats" aria-label="Stats">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -98,6 +98,10 @@
         </div>
 
         <div class="final-choice" id="final-choice" role="group" aria-label="Final round" hidden></div>
+
+        <button type="button" class="btn-next-item" id="btn-next-item" hidden>
+          NEXT ITEM →
+        </button>
 
         <div class="guess-log" id="guess-history"></div>
       </div>

@@ -24,9 +24,11 @@ import {
 } from "./puzzle.ts";
 import {
   loadEndless,
+  loadEndlessStats,
   loadProgress,
   loadStats,
   markEndlessRoundComplete,
+  recordEndlessResult,
   recordResult,
   saveProgress,
   type Stats,
@@ -307,7 +309,7 @@ function showResultModal(
   statsBtn.textContent = "STATS";
   statsBtn.addEventListener("click", () => {
     dismiss();
-    showStatsPopover(loadStats());
+    showStatsFor(endlessRound !== null);
   });
   btns.appendChild(statsBtn);
 
@@ -390,16 +392,22 @@ function showHelpModal() {
   modal.appendChild(btns);
 }
 
-function showStatsPopover(stats: Stats) {
+/** Stats live in separate buckets per mode; open the one for the current game. */
+function showStatsFor(endless: boolean) {
+  if (endless) showStatsPopover(loadEndlessStats(), "▸ ENDLESS STATS");
+  else showStatsPopover(loadStats());
+}
+
+function showStatsPopover(stats: Stats, title = "▸ STATS") {
   const { modal: pop, dismiss } = openModal({ className: "stats-pop", closeButton: false });
   pop.style.position = "static";
   pop.style.width = "100%";
   pop.style.maxWidth = "300px";
 
-  const title = document.createElement("div");
-  title.className = "stats-title";
-  title.textContent = "▸ STATS";
-  pop.appendChild(title);
+  const titleEl = document.createElement("div");
+  titleEl.className = "stats-title";
+  titleEl.textContent = title;
+  pop.appendChild(titleEl);
 
   const wins = stats.won;
   const totalHints = stats.history.filter((h) => h.won).reduce((a, h) => a + h.hintsUsed, 0);
@@ -540,6 +548,7 @@ async function main() {
   const hintsCount = $("hints-count");
   const attemptCount = $("attempt-count");
   const btnViewResults = $("btn-view-results") as HTMLButtonElement;
+  const btnNextItem = $("btn-next-item") as HTMLButtonElement;
 
   const guessRow = $("guess-row");
   const finalChoiceEl = $("final-choice");
@@ -621,6 +630,7 @@ async function main() {
 
     renderFinalChoice();
     btnViewResults.hidden = isPlaying(state);
+    btnNextItem.hidden = !isEndless || isPlaying(state);
     syncSubmitState();
   }
   refresh();
@@ -672,27 +682,27 @@ async function main() {
     if (isFinished(state)) finalize();
   }
 
-  function recordDailyResult() {
+  function recordGameResult() {
+    const record = {
+      puzzleNumber: state.puzzleNumber,
+      won: state.phase === "won",
+      hintsUsed: state.hintsRevealed,
+      guesses: state.guessIds.length,
+      finishedAt: state.finishedAt ?? Date.now(),
+      activeSeconds: state.activeSeconds,
+    };
     if (isEndless) {
       markEndlessRoundComplete(endlessRound);
+      // state.puzzleNumber is the round number in endless mode.
+      recordEndlessResult(record);
       return;
     }
-    recordResult(
-      {
-        puzzleNumber: state.puzzleNumber,
-        won: state.phase === "won",
-        hintsUsed: state.hintsRevealed,
-        guesses: state.guessIds.length,
-        finishedAt: state.finishedAt ?? Date.now(),
-        activeSeconds: state.activeSeconds,
-      },
-      state.puzzleNumber,
-    );
+    recordResult(record, state.puzzleNumber);
   }
 
   function finalize() {
     stopTimer();
-    recordDailyResult();
+    recordGameResult();
     showResultModal(state, quotes, isEndless ? endlessRound : null);
   }
 
@@ -702,7 +712,7 @@ async function main() {
   });
 
   $("btn-help").addEventListener("click", showHelpModal);
-  $("btn-stats").addEventListener("click", () => showStatsPopover(loadStats()));
+  $("btn-stats").addEventListener("click", () => showStatsFor(isEndless));
   $("btn-feedback").addEventListener("click", (e) => {
     e.preventDefault();
     showFeedbackModal(
@@ -714,11 +724,14 @@ async function main() {
   btnViewResults.addEventListener("click", () =>
     showResultModal(state, quotes, isEndless ? endlessRound : null),
   );
+  btnNextItem.addEventListener("click", () => {
+    location.search = `?endless=${endlessRound + 1}`;
+  });
 
   // Finished puzzle: sync stats, but do not auto-open the result modal (use VIEW RESULTS).
   if (isFinished(state)) {
     stopTimer();
-    recordDailyResult();
+    recordGameResult();
   }
 }
 

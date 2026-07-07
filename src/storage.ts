@@ -11,6 +11,7 @@
 const SCHEMA_KEY = "idg:schema";
 const STATS_KEY = "idg:stats";
 const ENDLESS_KEY = "idg:endless";
+const ENDLESS_STATS_KEY = "idg:endless-stats";
 const PROGRESS_PREFIX = "idg:p:";
 const SCHEMA_VERSION = 4;
 
@@ -99,7 +100,7 @@ export function saveProgress(p: Progress) {
 
 export function loadStats(): Stats {
   ensureSchema();
-  return readJSON<Stats>(STATS_KEY) ?? { ...EMPTY_STATS };
+  return readJSON<Stats>(STATS_KEY) ?? { ...EMPTY_STATS, history: [] };
 }
 
 export function loadEndless(): EndlessProgress {
@@ -120,11 +121,13 @@ export function markEndlessRoundComplete(round: number) {
   writeJSON(ENDLESS_KEY, progress);
 }
 
-export function recordResult(record: ResultRecord, currentPuzzle: number) {
-  ensureSchema();
-  const stats = loadStats();
+/**
+ * Fold a result into a Stats aggregate in place. Returns false (and leaves
+ * stats untouched) if this puzzle/round was already recorded.
+ */
+function pushResult(stats: Stats, record: ResultRecord): boolean {
   // Prevent double-counting if the same puzzle is finished twice.
-  if (stats.history.some((h) => h.puzzleNumber === record.puzzleNumber)) return stats;
+  if (stats.history.some((h) => h.puzzleNumber === record.puzzleNumber)) return false;
   stats.played += 1;
   if (record.won) stats.won += 1;
 
@@ -139,6 +142,28 @@ export function recordResult(record: ResultRecord, currentPuzzle: number) {
   }
   stats.bestStreak = Math.max(stats.bestStreak, stats.currentStreak);
   stats.history.push(record);
+  return true;
+}
+
+export function loadEndlessStats(): Stats {
+  ensureSchema();
+  // history: [] — a plain spread would share EMPTY_STATS's array and let
+  // pushes leak between the daily and endless aggregates.
+  return readJSON<Stats>(ENDLESS_STATS_KEY) ?? { ...EMPTY_STATS, history: [] };
+}
+
+/** Endless aggregate, kept apart from daily stats; puzzleNumber holds the round. */
+export function recordEndlessResult(record: ResultRecord): Stats {
+  ensureSchema();
+  const stats = loadEndlessStats();
+  if (pushResult(stats, record)) writeJSON(ENDLESS_STATS_KEY, stats);
+  return stats;
+}
+
+export function recordResult(record: ResultRecord, currentPuzzle: number) {
+  ensureSchema();
+  const stats = loadStats();
+  if (!pushResult(stats, record)) return stats;
 
   writeJSON(STATS_KEY, stats);
 
