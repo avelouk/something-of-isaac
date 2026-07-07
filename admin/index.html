@@ -77,6 +77,17 @@
         color: #888;
         margin-bottom: 1rem;
       }
+      .fallback-note {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        background: #3a2a10;
+        border: 2px solid #a80;
+        color: #fc6;
+        font-weight: 600;
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
       #status {
         margin-top: 1rem;
         font-size: 0.9rem;
@@ -94,6 +105,7 @@
     <label for="item-search">Item</label>
     <input id="item-search" type="text" placeholder="Search name…" autocomplete="off" />
     <select id="item-select" size="8" style="margin-top: 0.5rem"></select>
+    <div id="fallback-note" class="fallback-note" hidden></div>
     <div id="hints-wrap"></div>
     <button id="save" type="button">Save to worker</button>
     <div id="status"></div>

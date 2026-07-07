@@ -2,6 +2,7 @@ const bannersEl = document.getElementById("banners");
 const dateEl = document.getElementById("date");
 const itemSearchEl = document.getElementById("item-search");
 const itemSelectEl = document.getElementById("item-select");
+const fallbackNoteEl = document.getElementById("fallback-note");
 const hintsWrapEl = document.getElementById("hints-wrap");
 const saveEl = document.getElementById("save");
 const statusEl = document.getElementById("status");
@@ -39,6 +40,47 @@ function renderHints(count, values) {
   }
 }
 
+function hintValues() {
+  return [...hintsWrapEl.querySelectorAll("textarea")].map((ta) => ta.value);
+}
+
+/** The fallback text last poured into the textareas, so we never clobber manual edits. */
+let lastPrefill = [];
+let prefillToken = 0;
+
+function hideFallbackNote() {
+  fallbackNoteEl.hidden = true;
+  lastPrefill = [];
+  prefillToken += 1; // cancel any in-flight prefill
+}
+
+/**
+ * Fill the hint fields with what the game will actually show for this item
+ * (customHints → generated ladder → auto metadata) and flag it loudly.
+ * Skipped if the user already typed something that isn't a previous prefill.
+ */
+async function prefillFallback(itemId) {
+  const untouched = () => hintValues().every((v, i) => v.trim() === "" || v === lastPrefill[i]);
+  if (!untouched()) return;
+  const token = ++prefillToken;
+  let out;
+  try {
+    const r = await fetch(`/api/fallback-hints?itemId=${itemId}`);
+    if (!r.ok) return;
+    out = await r.json();
+  } catch {
+    return;
+  }
+  if (token !== prefillToken) return; // date/item changed while fetching
+  if (!untouched()) return; // user typed while fetching
+  renderHints(meta.hintCount, out.hints);
+  lastPrefill = out.hints;
+  fallbackNoteEl.textContent =
+    `⚠ No custom hints saved for this date — the fields below show the ${out.source} ` +
+    `players currently see. Edit them and press Save to publish custom hints.`;
+  fallbackNoteEl.hidden = false;
+}
+
 function fillSelectOptions(filterQuery, preferredItemId) {
   const ql = filterQuery.trim().toLowerCase();
   let subset = ql
@@ -74,6 +116,7 @@ function fillFromSchedule() {
 
   if (!entry) {
     statusEl.textContent = "No row for this date (outside generated range).";
+    hideFallbackNote();
     renderHints(meta.hintCount, []);
     fillSelectOptions(itemSearchEl.value, null);
     return;
@@ -84,12 +127,14 @@ function fillFromSchedule() {
   fillSelectOptions(name, entry.itemId);
 
   renderHints(meta.hintCount, entry.hints ?? []);
+  hideFallbackNote();
   const hasHints = entry.hints?.some((h) => h.trim().length > 0);
   statusEl.textContent = locked
     ? "Read-only — this UTC date is in the past."
     : hasHints
       ? "Loaded item and hints from the worker."
-      : "No hints yet — auto-generated ladders apply until you save.";
+      : "No custom hints yet — prefilled with the fallback players see.";
+  if (!hasHints) void prefillFallback(entry.itemId);
 }
 
 async function init() {
@@ -128,6 +173,8 @@ async function init() {
     const id = Number(itemSelectEl.value);
     const it = items.find((x) => x.id === id);
     if (it) itemSearchEl.value = it.name;
+    // Untouched fields (empty or a previous prefill) follow the newly picked item.
+    if (it) void prefillFallback(id);
   });
 
   dateEl.addEventListener("change", fillFromSchedule);
@@ -161,6 +208,7 @@ async function init() {
       const out = await r.json();
       if (!out.ok) throw new Error(out.error || r.statusText);
       statusEl.textContent = "Saved to the worker. Live within ~60s (cache TTL).";
+      hideFallbackNote(); // the saved hints are the custom hints now
       schedule = await fetch("/api/schedule").then((x) => x.json());
     } catch (e) {
       statusEl.textContent = e instanceof Error ? e.message : String(e);

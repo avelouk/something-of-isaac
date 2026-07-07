@@ -17,13 +17,15 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { utcTodayDateString } from "../src/puzzle.ts";
-import { HINT_COUNT } from "../src/hints.ts";
+import { HINT_COUNT, hintsForPuzzle, type Item } from "../src/hints.ts";
 import { loadDotenvLocal } from "./env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 const ADMIN_DIR = resolve(ROOT, "admin");
 const ITEMS_PATH = resolve(ROOT, "public/data/items.json");
+const LADDERS_PATH = resolve(ROOT, "public/data/ladders.json");
+const QUOTES_PATH = resolve(ROOT, "public/data/quotes.json");
 
 const HOST = "127.0.0.1";
 const PORT = 8765;
@@ -99,6 +101,33 @@ createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/items") {
       json(res, 200, loadItems().map((it) => ({ id: it.id, name: it.name })));
+      return;
+    }
+
+    // What the game shows when the schedule entry has no hand-authored hints:
+    // item.customHints → generated ladder → auto metadata (same resolver the app uses).
+    if (req.method === "GET" && url.pathname === "/api/fallback-hints") {
+      const id = Number(url.searchParams.get("itemId"));
+      const item = (JSON.parse(readFileSync(ITEMS_PATH, "utf8")) as Item[]).find(
+        (it) => it.id === id,
+      );
+      if (!item) {
+        json(res, 404, { error: `no item with id ${id}` });
+        return;
+      }
+      const ladders = JSON.parse(readFileSync(LADDERS_PATH, "utf8")) as Record<string, string[]>;
+      const quotes = JSON.parse(readFileSync(QUOTES_PATH, "utf8")) as Record<string, string>;
+      const ladder = ladders[String(id)];
+      const source =
+        item.customHints?.length === HINT_COUNT
+          ? "item custom hints"
+          : ladder?.length === HINT_COUNT
+            ? "generated ladder"
+            : "auto metadata hints";
+      const hints = hintsForPuzzle(undefined, item, quotes[String(id)] ?? "", ladder).map(
+        (h) => h.text,
+      );
+      json(res, 200, { source, hints });
       return;
     }
 
