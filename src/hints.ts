@@ -4,7 +4,8 @@
  * Resolution order:
  *   1. Schedule entry `hints` — per UTC calendar day (see schedule.json), ideal for creative copy.
  *   2. Item `customHints` — legacy / item-default authoring in items.json.
- *   3. `generateAutoHints` — metadata fallback when nothing hand-authored exists.
+ *   3. Ladder from data/ladders.json — generated six-step ladder (see scripts/generate-ladders.ts).
+ *   4. `generateAutoHints` — metadata fallback when no ladder exists either.
  *
  * After all six text hints are exhausted, the player enters the multiple-choice
  * round (see src/finalChoice.ts).
@@ -113,18 +114,22 @@ function generateAutoHints(item: Item, pickupQuote = ""): Hint[] {
 }
 
 /**
- * Full resolver: schedule overrides → item.customHints → auto metadata hints.
+ * Full resolver: schedule overrides → item.customHints → ladder → auto metadata hints.
  */
 export function hintsForPuzzle(
   scheduleHints: string[] | undefined,
   item: Item,
   pickupQuote = "",
+  ladderHints?: string[],
 ): Hint[] {
   if (scheduleHints && scheduleHints.length === HINT_COUNT) {
     return hintsFromStrings(scheduleHints);
   }
   if (item.customHints && item.customHints.length === HINT_COUNT) {
     return hintsFromStrings(item.customHints);
+  }
+  if (ladderHints && ladderHints.length === HINT_COUNT) {
+    return hintsFromStrings(ladderHints);
   }
   return generateAutoHints(item, pickupQuote);
 }

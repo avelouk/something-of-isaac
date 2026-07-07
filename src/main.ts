@@ -464,9 +464,10 @@ async function main() {
 
   let answer: Item | undefined;
   let entryHints: string[] | undefined;
+  let ladderHints: string[] | undefined;
   if (isEndless) {
     answer = endlessItemFor(items, endlessRound);
-    entryHints = ladders[String(answer.id)];
+    ladderHints = ladders[String(answer.id)];
   } else {
     let entry: PublicScheduleEntry | null = backendEntry;
     if (!entry) {
@@ -485,6 +486,15 @@ async function main() {
   if (!answer) {
     document.body.innerHTML = `<div class="app"><h1>Item missing</h1></div>`;
     return;
+  }
+
+  // No admin-authored hints for today: fall back to the generated ladder.
+  // Lazy-loaded so the 270 KB file doesn't ship when hints are authored.
+  if (!isEndless && (!entryHints || entryHints.length !== HINT_COUNT)) {
+    const dailyLadders = await loadJSON<Record<string, string[]>>(
+      import.meta.env.BASE_URL + "data/ladders.json",
+    ).catch(() => ({}) as Record<string, string[]>);
+    ladderHints = dailyLadders[String(answer.id)];
   }
 
   const indexed = indexItems(items, quotes);
@@ -512,7 +522,7 @@ async function main() {
     persist();
   });
 
-  const hints = hintsForPuzzle(entryHints, answer, quotes[answer.id]);
+  const hints = hintsForPuzzle(entryHints, answer, quotes[answer.id], ladderHints);
   const board = $("hints");
   const heroFrame = $("hero-frame");
   const hintHelp = $("hint-help");
