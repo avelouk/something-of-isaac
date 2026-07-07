@@ -48,7 +48,7 @@ body::before {
   z-index: 2;
   max-width: 720px;
   margin: 0 auto;
-  padding: 28px 20px 80px;
+  padding: 20px 20px 28px;
 }
 
 /* HEADER */
@@ -56,7 +56,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   gap: 12px;
 }
 .brand {
@@ -114,7 +114,7 @@ body::before {
   font-size: 18px;
   color: #b8a298;
   letter-spacing: 1px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 0 4px;
   gap: 16px;
   flex-wrap: wrap;
@@ -138,7 +138,7 @@ body::before {
     inset 0 0 0 5px var(--panel-edge),
     0 12px 0 -4px var(--blood-deep),
     0 14px 32px rgba(0, 0, 0, 0.5);
-  padding: 24px 24px 20px;
+  padding: 20px 24px 16px;
   position: relative;
 }
 
@@ -187,6 +187,8 @@ body::before {
   white-space: nowrap;
 }
 .score-pill {
+  display: inline-flex;
+  align-items: center;
   font-family: "VT323", monospace;
   font-size: 18px;
   background: var(--ink);
@@ -201,11 +203,11 @@ body::before {
   background: #fbf5e6;
   border: 2px solid var(--panel-edge);
   border-radius: 4px;
-  height: 180px;
+  height: 150px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   box-shadow: inset 0 0 0 4px #fbf5e6, inset 0 0 0 5px #ece0c6;
 }
 .hero-frame img.item-sprite {
@@ -242,8 +244,8 @@ body::before {
 .hints {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 .hint {
   display: flex;
@@ -253,7 +255,7 @@ body::before {
   border: 1px solid #e2d5b8;
   border-left: 4px solid #d8c9ac;
   border-radius: 3px;
-  min-height: 44px;
+  min-height: 40px;
   overflow: hidden;
   transition: all 0.25s;
 }
@@ -302,8 +304,8 @@ body::before {
   color: var(--ink-soft);
   letter-spacing: 1px;
   text-align: center;
-  margin-bottom: 14px;
-  padding: 8px;
+  margin-bottom: 12px;
+  padding: 6px;
   background: rgba(0, 0, 0, 0.03);
   border-radius: 3px;
 }
@@ -624,20 +626,24 @@ body::before {
 .btn-secondary { background: var(--panel); color: var(--ink); }
 
 .modal-support-link {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 .modal-support-link a {
+  display: inline-block;
   font-family: "VT323", monospace;
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: 2px;
   color: var(--blood);
   text-decoration: none;
-  border-bottom: 1px dashed var(--blood-deep);
-  transition: color 0.15s, border-color 0.15s;
+  padding: 6px 14px;
+  border: 1px dashed var(--blood);
+  border-radius: 3px;
+  transition: all 0.15s;
 }
 .modal-support-link a:hover {
-  color: var(--blood-deep);
-  border-bottom-color: currentColor;
+  background: var(--blood);
+  color: var(--panel);
+  border-style: solid;
 }
 
 .next-room {
@@ -687,25 +693,79 @@ body::before {
 /* FOOTER */
 .footer {
   text-align: center;
-  margin-top: 24px;
+  margin-top: 20px;
   font-family: "VT323", monospace;
   font-size: 14px;
   color: #6a544c;
   letter-spacing: 2px;
 }
 .footer .daily-players {
-  margin-top: 10px;
+  margin-top: 8px;
   color: #8a7268;
   letter-spacing: 1px;
+}
+
+/* FOOTER ACTION CHIPS */
+.footer-actions {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "VT323", monospace;
+  font-size: 17px;
+  letter-spacing: 1px;
+  color: #c9b4aa;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #3a2422;
+  border-radius: 4px;
+  padding: 8px 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+  transition: all 0.15s;
+}
+.chip:hover {
+  background: #2a1a17;
+  border-color: var(--blood);
+  color: var(--gold-soft);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
+}
+.chip:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+.chip-endless {
+  border-color: var(--blood-deep);
+  color: var(--panel);
 }
 
 /* MOBILE */
 @media (max-width: 600px) {
   .app {
-    padding: 16px 12px 60px;
+    padding: 12px 12px 20px;
+  }
+  .footer {
+    margin-top: 12px;
+  }
+  .footer-actions {
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .chip {
+    font-size: 15px;
+    padding: 8px 10px;
   }
   .topbar {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   .brand-mark {
     width: 32px;
@@ -726,12 +786,13 @@ body::before {
   .meta {
     font-size: 15px;
     gap: 10px;
+    margin-bottom: 10px;
   }
   .timer {
     font-size: 18px;
   }
   .card {
-    padding: 16px 14px 14px;
+    padding: 14px 14px 12px;
     box-shadow:
       inset 0 0 0 3px var(--panel),
       inset 0 0 0 4px var(--panel-edge),
@@ -747,7 +808,7 @@ body::before {
     padding: 3px 8px;
   }
   .hero-frame {
-    height: 140px;
+    height: 110px;
   }
   .hero-frame img.item-sprite {
     width: 96px;
@@ -766,7 +827,7 @@ body::before {
     height: 72px;
   }
   .hint {
-    min-height: 48px; /* keep finger-friendly even when locked */
+    min-height: 44px; /* keep finger-friendly even when locked */
   }
   .hint-num {
     width: 32px;
@@ -965,14 +1026,15 @@ body::before {
   color: var(--ink);
   margin-bottom: 3px;
 }
-.affiliate-list span {
+/* :not(.badge) keeps this description style off badges, which the global
+   .badge rule below would otherwise lose to on specificity. */
+.affiliate-list span:not(.badge) {
   display: block;
   font-size: 13px;
   color: var(--ink-soft);
   line-height: 1.45;
 }
-.support-card .badge,
-.affiliate-list .badge {
+.badge {
   display: inline-block;
   font-family: "VT323", monospace;
   font-size: 10px;
@@ -984,6 +1046,10 @@ body::before {
   margin-left: 6px;
   vertical-align: middle;
   font-weight: normal;
+}
+.badge-beta {
+  background: var(--gold);
+  color: var(--ink);
 }
 .support-lede .badge {
   margin-left: 4px;
@@ -1023,9 +1089,6 @@ body::before {
   border-radius: 2px;
 }
 
-.footer-links {
-  margin-top: 10px;
-}
 .footer-link {
   color: #6a544c;
   text-decoration: none;
@@ -1035,10 +1098,6 @@ body::before {
 .footer-link:hover {
   color: var(--gold-soft);
   border-bottom-color: currentColor;
-}
-.footer-sep {
-  margin: 0 6px;
-  color: #6a544c;
 }
 
 /* FEEDBACK MODAL — shares the base input look with .guess-input above */

@@ -211,6 +211,13 @@ function buildShareString(state: GameState, label?: string): string {
   });
 }
 
+function makeBetaBadge(): HTMLSpanElement {
+  const badge = document.createElement("span");
+  badge.className = "badge badge-beta";
+  badge.textContent = "BETA";
+  return badge;
+}
+
 /** endlessRound: null for the daily game, the round number in endless mode. */
 function showResultModal(
   state: GameState,
@@ -313,7 +320,7 @@ function showResultModal(
   if (!endlessRound) {
     const endlessBtn = document.createElement("button");
     endlessBtn.className = "btn btn-secondary";
-    endlessBtn.textContent = "∞ ENDLESS";
+    endlessBtn.append("∞ TRY ENDLESS MODE", makeBetaBadge());
     endlessBtn.addEventListener("click", () => {
       location.search = "?endless=1";
     });
@@ -512,6 +519,9 @@ async function main() {
     ? `ENDLESS #${endlessRound}`
     : `PUZZLE #${puzzleNumber}`;
   if (isEndless) {
+    $("puzzle-number").appendChild(makeBetaBadge());
+    // Wipes the chip's BETA badge along with the label — intended, since the
+    // link now points back to the daily puzzle.
     const modeLink = $("mode-link") as HTMLAnchorElement;
     modeLink.textContent = "← BACK TO DAILY";
     modeLink.href = location.pathname;

@@ -23,7 +23,7 @@ export function showFeedbackModal(
 
   const sub = document.createElement("div");
   sub.className = "modal-sub";
-  sub.textContent = "Wrong hint, bug, or anything else — it goes straight to the dev.";
+  sub.textContent = "Bad hints, bugs, or anything else. It goes straight to the dev.";
   modal.appendChild(sub);
 
   const textarea = document.createElement("textarea");

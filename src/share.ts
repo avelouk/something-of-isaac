@@ -5,7 +5,7 @@
  *
  *   Something of Isaac · 2026-05-02
  *   ✓ 3/6 hints · 2 tries
- *   🟥🟥🟥⬜⬜⬜  ⏱ 00:42
+ *   🟩🟩🟩⬜⬜⬜  ⏱ 00:42
  *   https://avelouk.com/something-of-isaac/
  *
  * If the player went through the multiple-choice round, a 🎯 is
@@ -17,8 +17,14 @@ import { HINT_COUNT } from "./hints.ts";
 /** Public site — appended to copied share text. */
 export const SHARE_SITE_URL = "https://avelouk.com/something-of-isaac/";
 
-const SOLID = "🟥";
 const EMPTY = "⬜";
+
+/** Filled squares grade the run: few hints = green, mid = yellow, all six = red. */
+function solidSquare(filledCount: number): string {
+  if (filledCount <= 3) return "🟩";
+  if (filledCount <= 5) return "🟨";
+  return "🟥";
+}
 
 function formatDate(d: Date = new Date()): string {
   const yyyy = d.getUTCFullYear();
@@ -45,11 +51,11 @@ export function shareString(opts: {
   label?: string;
 }) {
   const { won, hintsUsed, guessCount, activeSeconds, usedFinalChoice } = opts;
+  const filled = won ? hintsUsed : HINT_COUNT; // loss fills the whole ladder
+  const solid = solidSquare(filled);
   let bar = "";
   for (let i = 0; i < HINT_COUNT; i++) {
-    if (!won) bar += SOLID; // all-red ladder on loss
-    else if (i < hintsUsed) bar += SOLID;
-    else bar += EMPTY;
+    bar += i < filled ? solid : EMPTY;
   }
   const mark = won ? "✓" : "✗";
   const score = won ? `${hintsUsed}/${HINT_COUNT}` : `X/${HINT_COUNT}`;
