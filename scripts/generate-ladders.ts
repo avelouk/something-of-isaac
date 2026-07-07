@@ -104,7 +104,7 @@ THE ONE RULE: each hint states exactly ONE fact in one short sentence. No compou
 
 Ladder roles:
 2. One oblique property of the effect — a limitation, trigger, side effect, or number. NEVER the headline effect; after hint 2 a veteran should still have dozens of candidates.
-3. One lateral association: wordplay on the name, what the object is in real life, or a cultural reference. Trivia lines are gold here.
+3. One lateral association: wordplay on the name, what the object is in real life, or a cultural reference. Trivia lines are gold here. If the item is named directly after the real-world object, do NOT describe that object plainly (it gives the name away) — use a more oblique angle instead.
 4. The unlock method if an "Unlock:" line is provided (phrase it "Unlocked by ..."). Otherwise ONE relation fact: an item pool, or a connection to another item, trinket, or character.
 5. One clearly identifying gameplay fact — the effect or behavior, stated without the name.
 6. Near-giveaway: what the sprite depicts, or the single most defining detail.
@@ -114,6 +114,8 @@ Rules:
 - Each hint under 120 characters.
 - NEVER include the item's name, or a distinctive word from it, in any hint. Oblique references to the name ("its name sounds like...") are good.
 - Only use facts from the item's provided lines. Never invent unlocks, numbers, pools, or references.
+- Keep the source's exact strength of wording: if the data says "range", don't write "power"; a boss is a "boss", not a "superboss".
+- No two hints in a ladder may state the same underlying fact. Hint 5 owns the effect — hint 6 must NOT restate it; describe the sprite or another defining detail instead.
 
 Hand-written ladders from the game — match this voice and terseness exactly:
 
