@@ -8364,19 +8364,6 @@
     "img": "data/sprites/619.webp"
   },
   {
-    "id": 619,
-    "name": "Birthright (Tainted)",
-    "quality": 3,
-    "type": "passive",
-    "dlc": "repentance",
-    "pools": [
-      "Shop"
-    ],
-    "primaryTag": "burn",
-    "description": "Grants a character-specific effect that enhances their special abilities.",
-    "img": "data/sprites/619.webp"
-  },
-  {
     "id": 621,
     "name": "Red Stew",
     "quality": 2,

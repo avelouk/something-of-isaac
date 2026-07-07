@@ -145,6 +145,7 @@ async function main() {
   const $ = load(html);
   const items: Item[] = [];
   const skipped: { id: number; reason: string }[] = [];
+  const seenIds = new Set<number>();
 
   $("li.textbox").each((_, el) => {
     const li = $(el);
@@ -165,6 +166,13 @@ async function main() {
       skipped.push({ id, reason: "not in Isaaconnect" });
       return;
     }
+    // PG repeats some items on its tainted-characters pages under the same
+    // ItemID (e.g. 619 "Birthright (Tainted)") — keep the first occurrence.
+    if (seenIds.has(id)) {
+      skipped.push({ id, reason: "duplicate id" });
+      return;
+    }
+    seenIds.add(id);
 
     const name = li.find(".item-title").first().text().trim() || nameById.get(id) || `Item ${id}`;
     const pickupQuote = li
