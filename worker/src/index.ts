@@ -2,8 +2,10 @@
  * something-of-isaac worker: daily player counts + the daily schedule (items + hints).
  *
  * Routes:
- *   POST /visit  — counts each UUID at most once per UTC day (Durable Object per day).
- *   GET  /stats/history?from=YYYY-MM-DD&to=YYYY-MM-DD — bearer ADMIN_TOKEN; daily unique counts.
+ *   POST /visit  — counts each UUID at most once per UTC day (Durable Object per day),
+ *                  and every call as one pageview (fires on each page load, incl. endless reloads).
+ *   GET  /stats/history?from=YYYY-MM-DD&to=YYYY-MM-DD — bearer ADMIN_TOKEN; daily unique +
+ *                  pageview counts. Days before pageview counting shipped report pageviews: 0.
  *   /schedule*   — the daily schedule (see schedule.ts). SCHEDULE_KV is the single source of
  *                  truth for each day's itemId + hints; public reads return one past/today row,
  *                  authed reads/writes (bearer ADMIN_TOKEN) edit the store.
@@ -116,7 +118,12 @@ async function handleStatsHistory(request: Request, env: Env): Promise<Response>
   for (let d = from; compareIsoDate(d, to) <= 0; d = addUtcDay(d)) dateList.push(d);
 
   const authHeader = request.headers.get("Authorization") ?? "";
-  const days: Array<{ date: string; unique: number; countries: Record<string, number> }> = [];
+  const days: Array<{
+    date: string;
+    unique: number;
+    pageviews: number;
+    countries: Record<string, number>;
+  }> = [];
 
   try {
     for (let i = 0; i < dateList.length; i += STATS_HISTORY_CONCURRENCY) {
@@ -133,14 +140,22 @@ async function handleStatsHistory(request: Request, env: Env): Promise<Response>
           if (!res.ok) {
             throw new Error(`snapshot failed for ${d}: ${res.status}`);
           }
-          const row = (await res.json()) as { unique?: unknown; countries?: unknown };
+          const row = (await res.json()) as {
+            unique?: unknown;
+            pageviews?: unknown;
+            countries?: unknown;
+          };
           const unique =
             typeof row.unique === "number" && Number.isFinite(row.unique) ? row.unique : 0;
+          const pageviews =
+            typeof row.pageviews === "number" && Number.isFinite(row.pageviews)
+              ? row.pageviews
+              : 0;
           const countries =
             row.countries && typeof row.countries === "object" && !Array.isArray(row.countries)
               ? (row.countries as Record<string, number>)
               : {};
-          return { date: d, unique, countries };
+          return { date: d, unique, pageviews, countries };
         }),
       );
       days.push(...wave);
@@ -214,9 +229,11 @@ export class DailyRoom implements DurableObject {
     if (request.method === "GET" && path.endsWith("/__stats_snapshot")) {
       if (!isAuthorized(request, this.env)) return json({ error: "unauthorized" }, 401);
       const unique = (await this.ctx.storage.get<number>("unique")) ?? 0;
+      // Days before pageview counting shipped have no key — they report 0.
+      const pageviews = (await this.ctx.storage.get<number>("pageviews")) ?? 0;
       const countries =
         (await this.ctx.storage.get<Record<string, number>>("countries")) ?? {};
-      return json({ unique, countries });
+      return json({ unique, pageviews, countries });
     }
 
     if (request.method === "POST" && path.endsWith("/visit")) {
@@ -234,30 +251,46 @@ export class DailyRoom implements DurableObject {
           ? (body as { visitorId: string }).visitorId.trim().slice(0, 64)
           : "";
 
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitorId)) {
+      // An absent/blank id means the browser blocked localStorage (private mode) —
+      // still a real page load, so count the view and skip the identity buckets.
+      // A *malformed* id is junk and is rejected outright, so it cannot mint
+      // phantom uniques.
+      if (
+        visitorId !== "" &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitorId)
+      ) {
         return json({ error: "visitorId must be a UUID" }, 400);
       }
 
-      const seenKey = `seen:${visitorId}`;
-      const already = await this.ctx.storage.get(seenKey);
-      const cf = request.cf as IncomingRequestCfProperties | undefined;
-      const country = (cf?.country ?? request.headers.get("CF-IPCountry") ?? "").trim();
+      // Every accepted /visit is one page load, so this doubles as a pageview
+      // counter — endless-mode "NEXT ITEM" reloads count here too.
+      const pageviews = ((await this.ctx.storage.get<number>("pageviews")) ?? 0) + 1;
+      await this.ctx.storage.put("pageviews", pageviews);
 
-      if (!already) {
-        await this.ctx.storage.put(seenKey, "1");
-        const unique = ((await this.ctx.storage.get<number>("unique")) ?? 0) + 1;
-        await this.ctx.storage.put("unique", unique);
+      let newVisitor = false;
+      if (visitorId) {
+        const seenKey = `seen:${visitorId}`;
+        const already = await this.ctx.storage.get(seenKey);
+        newVisitor = !already;
 
-        if (country && country !== "XX" && country !== "T1") {
-          const countries =
-            (await this.ctx.storage.get<Record<string, number>>("countries")) ?? {};
-          countries[country] = (countries[country] ?? 0) + 1;
-          await this.ctx.storage.put("countries", countries);
+        if (!already) {
+          await this.ctx.storage.put(seenKey, "1");
+          const nextUnique = ((await this.ctx.storage.get<number>("unique")) ?? 0) + 1;
+          await this.ctx.storage.put("unique", nextUnique);
+
+          const cf = request.cf as IncomingRequestCfProperties | undefined;
+          const country = (cf?.country ?? request.headers.get("CF-IPCountry") ?? "").trim();
+          if (country && country !== "XX" && country !== "T1") {
+            const countries =
+              (await this.ctx.storage.get<Record<string, number>>("countries")) ?? {};
+            countries[country] = (countries[country] ?? 0) + 1;
+            await this.ctx.storage.put("countries", countries);
+          }
         }
       }
 
       const unique = (await this.ctx.storage.get<number>("unique")) ?? 0;
-      return json({ unique, newVisitor: !already });
+      return json({ unique, newVisitor });
     }
 
     return new Response("Not found", { status: 404, headers: corsHeaders() });

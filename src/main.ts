@@ -534,7 +534,6 @@ async function main() {
     modeLink.textContent = "← BACK TO DAILY";
     modeLink.href = location.pathname;
   }
-  void initDailyStats(import.meta.env.VITE_STATS_WORKER_URL);
   const stopTimer = startElapsedTimer($("utc-clock"), state, () => {
     // Persist active-time on each tick so a reload resumes from the same point.
     persist();
@@ -734,6 +733,11 @@ async function main() {
     recordGameResult();
   }
 }
+
+// Outside main() on purpose: this module is deferred, so the DOM already exists, and
+// firing here means a boot failure below still records the page load. Inside main() it
+// sat after the items/schedule/ladders fetches, so a bad deploy reported silence.
+void initDailyStats(import.meta.env.VITE_STATS_WORKER_URL);
 
 main().catch((e) => {
   console.error(e);

@@ -21,28 +21,35 @@ function getVisitorId(): string {
 }
 
 /**
- * If `workerBaseUrl` is set (VITE_STATS_WORKER_URL), registers this browser once per load
- * and updates #daily-players from the worker response.
+ * If `workerBaseUrl` is set (VITE_STATS_WORKER_URL), registers this page load with the
+ * worker (one pageview, plus this browser's first visit of the UTC day) and updates
+ * #daily-players from the response.
+ *
+ * Counting comes first and is never gated on display: a missing footer element or a
+ * browser that blocks localStorage used to skip the POST entirely, which silently lost
+ * every private-browsing load. An absent visitorId still counts as a pageview worker-side;
+ * it just skips the unique/country buckets.
  */
 export async function initDailyStats(workerBaseUrl: string | undefined): Promise<void> {
   const base = workerBase(workerBaseUrl);
   if (!base) return;
 
-  const el = document.getElementById("daily-players");
-  if (!el) return;
-
+  // "" when localStorage is unavailable — still a real page load, so still ping.
   const visitorId = getVisitorId();
-  if (!visitorId) return;
 
   try {
     const visitRes = await fetch(`${base}/visit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitorId }),
+      body: JSON.stringify(visitorId ? { visitorId } : {}),
+      // Survive a navigation that starts before the request settles.
+      keepalive: true,
     });
     if (!visitRes.ok) return;
     const data = (await visitRes.json()) as { unique?: unknown };
     if (typeof data.unique !== "number" || !Number.isFinite(data.unique)) return;
+    const el = document.getElementById("daily-players");
+    if (!el) return;
     el.textContent = `${data.unique.toLocaleString()} players today`;
     el.removeAttribute("hidden");
   } catch {

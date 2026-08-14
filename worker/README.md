@@ -57,10 +57,18 @@ Temporarily set `VITE_STATS_WORKER_URL=http://127.0.0.1:8787` when running `npm 
 
 | Method | Path    | Purpose |
 |--------|---------|---------|
-| POST   | `/visit` | Body: `{ "visitorId": "<uuid>" }`. Counts at most once per visitor per UTC day. Returns `{ unique, newVisitor }`. |
-| GET    | `/stats/history?from=YYYY-MM-DD&to=YYYY-MM-DD` | **Bearer `ADMIN_TOKEN`**. Returns `{ from, to, days: [{ date, unique, countries }] }` for each UTC day in range. Days with no traffic show `unique: 0`. Max **400** days per request. |
+| POST   | `/visit` | Body: `{ "visitorId": "<uuid>" }`. Counts at most once per visitor per UTC day, **and once per call as a pageview**. `visitorId` may be **omitted or empty** (browsers blocking `localStorage`): the pageview still counts, the unique/country buckets are skipped. A *malformed* id is rejected with 400 and counts nothing. Returns `{ unique, newVisitor }`. |
+| GET    | `/stats/history?from=YYYY-MM-DD&to=YYYY-MM-DD` | **Bearer `ADMIN_TOKEN`**. Returns `{ from, to, days: [{ date, unique, pageviews, countries }] }` for each UTC day in range. Days with no traffic show `unique: 0`. Max **400** days per request. |
 
 On each **new** visitor that UTC day, the Worker increments per-country buckets using Cloudflare geo (stored in the DO; returned only on `/stats/history`, not on `/visit`).
+
+**Pageviews vs. uniques.** `/visit` fires on every page load, so `pageviews` counts loads while `unique` counts people — endless-mode "NEXT ITEM" reloads show up in `pageviews` only. Requests with a malformed `visitorId` are rejected before counting. Ad networks (Nitro, Playwire) ask for monthly pageviews on their application forms — this is that number. Days before this shipped (before 2026-08-14) report `pageviews: 0`.
+
+**How much to trust it.** More than the Cloudflare Web Analytics beacon in `index.html`, but it is not ground truth:
+
+- *Blocking.* The worker is a separate host (`*.workers.dev`) from the site, not a same-origin endpoint — that cross-origin split is why this file ships CORS headers, and blockers filter by hostname. The practical difference is that `static.cloudflareinsights.com` is on EasyPrivacy and similar lists **by name**, while an arbitrary `workers.dev` subdomain is not on standard lists. So expect less blocking here, not zero.
+- *Undercounts.* `support.html` loads no bundle, so it never calls `/visit` — the Cloudflare beacon is the only thing covering that page. Everything else that used to be lost is now counted: the ping fires before `main()` (so a failed boot still registers) and no longer requires `localStorage` or the `#daily-players` element.
+- *Inflatable.* The endpoint is unauthenticated and the counter has no per-visitor cap, so a replayed UUID can raise `pageviews` without bound. Sanity-check the daily numbers before quoting them to an ad network.
 
 ### Schedule (`SCHEDULE_KV`)
 
