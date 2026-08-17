@@ -28,6 +28,7 @@ import {
   isValidIsoDate,
   utcTodayDateString,
 } from "../../src/puzzle.ts";
+import { isVisitorId } from "../../src/limits.ts";
 
 export interface Env {
   DAILY_STATS: DurableObjectNamespace;
@@ -255,10 +256,7 @@ export class DailyRoom implements DurableObject {
       // still a real page load, so count the view and skip the identity buckets.
       // A *malformed* id is junk and is rejected outright, so it cannot mint
       // phantom uniques.
-      if (
-        visitorId !== "" &&
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitorId)
-      ) {
+      if (visitorId !== "" && !isVisitorId(visitorId)) {
         return json({ error: "visitorId must be a UUID" }, 400);
       }
 

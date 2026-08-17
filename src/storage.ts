@@ -6,13 +6,35 @@
  * - Schema version bump strategy: read SCHEMA_KEY first; if it's behind
  *   what we ship, run migrations or clear (current MVP: clear if out
  *   of date, accept the streak loss).
+ *
+ * The Stats/ResultRecord shapes and the pushResult fold live in
+ * src/playerState.ts, because the worker imports them too — see that file.
  */
+
+import {
+  emptyStats,
+  pushResult,
+  type ResultRecord,
+  type Stats,
+} from "./playerState.ts";
+
+// Re-exported so importers (src/main.ts) don't need to know these moved.
+export type { ResultRecord, Stats } from "./playerState.ts";
 
 const SCHEMA_KEY = "idg:schema";
 const STATS_KEY = "idg:stats";
 const ENDLESS_KEY = "idg:endless";
 const ENDLESS_STATS_KEY = "idg:endless-stats";
 const PROGRESS_PREFIX = "idg:p:";
+/**
+ * Local only — never sent to the server, and deliberately independent of the
+ * /player/sync wire version (PLAYER_SYNC_VERSION in limits.ts).
+ *
+ * Bumping this wipes every idg:* key below. That is only survivable because the
+ * server holds a copy and the sync merge is additive: wipe → push empty →
+ * server keeps everything → response rehydrates local. Do not bump it until
+ * /player/sync has real coverage, and verify a wipe-then-restore cycle first.
+ */
 const SCHEMA_VERSION = 4;
 
 export type Progress = {
@@ -28,34 +50,9 @@ export type Progress = {
   activeSeconds: number; // wall-clock time spent with the tab open and game in progress
 };
 
-export type ResultRecord = {
-  puzzleNumber: number;
-  won: boolean;
-  hintsUsed: number; // hint count when guessed correctly (or 7 if lost)
-  guesses: number;
-  finishedAt: number;
-  activeSeconds: number;
-};
-
-export type Stats = {
-  played: number;
-  won: number;
-  currentStreak: number;
-  bestStreak: number;
-  history: ResultRecord[];
-};
-
 export type EndlessProgress = {
   /** Round to serve when re-entering endless mode. */
   nextRound: number;
-};
-
-const EMPTY_STATS: Stats = {
-  played: 0,
-  won: 0,
-  currentStreak: 0,
-  bestStreak: 0,
-  history: [],
 };
 
 function readJSON<T>(key: string): T | null {
@@ -100,7 +97,7 @@ export function saveProgress(p: Progress) {
 
 export function loadStats(): Stats {
   ensureSchema();
-  return readJSON<Stats>(STATS_KEY) ?? { ...EMPTY_STATS, history: [] };
+  return readJSON<Stats>(STATS_KEY) ?? emptyStats();
 }
 
 export function loadEndless(): EndlessProgress {
@@ -121,35 +118,9 @@ export function markEndlessRoundComplete(round: number) {
   writeJSON(ENDLESS_KEY, progress);
 }
 
-/**
- * Fold a result into a Stats aggregate in place. Returns false (and leaves
- * stats untouched) if this puzzle/round was already recorded.
- */
-function pushResult(stats: Stats, record: ResultRecord): boolean {
-  // Prevent double-counting if the same puzzle is finished twice.
-  if (stats.history.some((h) => h.puzzleNumber === record.puzzleNumber)) return false;
-  stats.played += 1;
-  if (record.won) stats.won += 1;
-
-  // Streak: increments only if previous record was the immediately prior puzzle and won.
-  const previous = stats.history[stats.history.length - 1];
-  if (record.won && previous && previous.won && previous.puzzleNumber === record.puzzleNumber - 1) {
-    stats.currentStreak += 1;
-  } else if (record.won) {
-    stats.currentStreak = 1;
-  } else {
-    stats.currentStreak = 0;
-  }
-  stats.bestStreak = Math.max(stats.bestStreak, stats.currentStreak);
-  stats.history.push(record);
-  return true;
-}
-
 export function loadEndlessStats(): Stats {
   ensureSchema();
-  // history: [] — a plain spread would share EMPTY_STATS's array and let
-  // pushes leak between the daily and endless aggregates.
-  return readJSON<Stats>(ENDLESS_STATS_KEY) ?? { ...EMPTY_STATS, history: [] };
+  return readJSON<Stats>(ENDLESS_STATS_KEY) ?? emptyStats();
 }
 
 /** Endless aggregate, kept apart from daily stats; puzzleNumber holds the round. */
