@@ -55,7 +55,20 @@ The worker exposes **`POST /visit`** to browsers (returns today’s unique playe
 
 ## Player state sync
 
-Streaks and endless position also sync to the worker (**`POST /player/sync`**), keyed by the same anonymous UUID as `/visit`, so they survive a cleared cache or a new phone. It is silent and best-effort: if the worker is unset or unreachable the game runs exactly as before, on `localStorage` alone.
+Streaks and endless position also sync to the worker (**`POST /player/sync`**), keyed by the same anonymous UUID as `/visit`. It is silent and best-effort: if the worker is unset or unreachable the game runs exactly as before, on `localStorage` alone.
+
+**What this does and does not recover.** The visitor UUID lives in `localStorage` too, so it is the key *and* it is stored in the thing that gets cleared. Server state is recoverable only when that id survives:
+
+| Scenario | Recovers? | Why |
+|---|---|---|
+| `SCHEMA_VERSION` bump | **yes** | `ensureSchema()` wipes only `idg:*` and deliberately spares `soi-visitor-id` |
+| Domain move with the `#soi=` handoff | **yes** | the old origin hands the id to the new one |
+| Clearing the browser *cache* | n/a | never touched `localStorage` in the first place |
+| "Clear cookies and site data" | **no** | takes the UUID with it |
+| A new phone or a different browser | **no** | `localStorage` does not travel |
+| Safari ITP eviction after 7 idle days | **no** | deletes script-writable storage, id included |
+
+Genuine cross-device recovery would need a user-visible recovery code (show the UUID, accept a pasted one). That was deliberately left out of v1 — it makes the id, which is effectively a password, visible and shareable.
 
 This exists mainly for the eventual move to a dedicated domain. `localStorage` is origin-scoped, so without a server copy every returning player would restart at zero — and so would their streak, which is the thing that brings them back. The server copy is only half of it: the visitor UUID is origin-scoped too, so a move must hand the old id to the new origin in the URL fragment (`#soi=<uuid>`), which `adoptVisitorIdFromUrl()` in `src/visitorId.ts` already accepts.
 

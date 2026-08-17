@@ -4,7 +4,7 @@ This folder is a **Cloudflare Worker** that does three jobs:
 
 1. **Daily stats** — a **Durable Object** stores one bucket per UTC day: unique visitor count (by anonymous UUID) and optional aggregate counts by country (Cloudflare geo on first visit only).
 2. **Schedule** — a **KV namespace** (`SCHEDULE_KV`) is the single source of truth for the daily puzzle: which collectible is the answer each UTC day, plus optional hand-written hints. The game fetches today's row from here; `public/data/schedule.json` in the repo is only an offline fallback.
-3. **Player state** — a second **Durable Object** class (`PlayerStore`) holds each player's streak history and endless position, keyed by the same anonymous UUID as `/visit`, so streaks survive a cleared cache, a new phone, and eventually a change of domain.
+3. **Player state** — a second **Durable Object** class (`PlayerStore`) holds each player's streak history and endless position, keyed by the same anonymous UUID as `/visit`. Primarily so streaks survive the move to a new domain; see the recovery table in the root README for what it does and does not cover (the UUID lives in `localStorage` too, so it is not a cross-device backup).
 
 ## Why a Durable Object for stats / KV for the schedule?
 
