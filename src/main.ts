@@ -39,6 +39,8 @@ import { openModal } from "./ui/modal.ts";
 import { copyToClipboard, shareString } from "./share.ts";
 import { pickFinalChoices } from "./finalChoice.ts";
 import { initDailyStats } from "./analytics.ts";
+import { adoptVisitorIdFromUrl } from "./visitorId.ts";
+import { playerSyncSettled, pushPlayerState, startPlayerSync } from "./playerSync.ts";
 import { showFeedbackModal } from "./feedback.ts";
 import { effectiveEndlessRound, endlessItemFor } from "./endless.ts";
 import { fetchScheduleEntry, type PublicScheduleEntry } from "./scheduleFetch.ts";
@@ -309,7 +311,7 @@ function showResultModal(
   statsBtn.textContent = "STATS";
   statsBtn.addEventListener("click", () => {
     dismiss();
-    showStatsFor(endlessRound !== null);
+    void showStatsFor(endlessRound !== null);
   });
   btns.appendChild(statsBtn);
 
@@ -393,7 +395,10 @@ function showHelpModal() {
 }
 
 /** Stats live in separate buckets per mode; open the one for the current game. */
-function showStatsFor(endless: boolean) {
+async function showStatsFor(endless: boolean) {
+  // Let the boot sync land first so a player on a new device doesn't see zeroes.
+  // Normally already resolved by the time anyone clicks.
+  await playerSyncSettled();
   if (endless) showStatsPopover(loadEndlessStats(), "▸ ENDLESS STATS");
   else showStatsPopover(loadStats());
 }
@@ -690,13 +695,17 @@ async function main() {
       finishedAt: state.finishedAt ?? Date.now(),
       activeSeconds: state.activeSeconds,
     };
+    let added: boolean;
     if (isEndless) {
       markEndlessRoundComplete(endlessRound);
       // state.puzzleNumber is the round number in endless mode.
-      recordEndlessResult(record);
-      return;
+      ({ added } = recordEndlessResult(record));
+    } else {
+      ({ added } = recordResult(record, state.puzzleNumber));
     }
-    recordResult(record, state.puzzleNumber);
+    // Only on a genuinely new result. This also runs on load for an already
+    // finished puzzle, where `added` is false and no request should go out.
+    if (added) pushPlayerState();
   }
 
   function finalize() {
@@ -711,7 +720,7 @@ async function main() {
   });
 
   $("btn-help").addEventListener("click", showHelpModal);
-  $("btn-stats").addEventListener("click", () => showStatsFor(isEndless));
+  $("btn-stats").addEventListener("click", () => void showStatsFor(isEndless));
   $("btn-feedback").addEventListener("click", (e) => {
     e.preventDefault();
     showFeedbackModal(
@@ -737,7 +746,12 @@ async function main() {
 // Outside main() on purpose: this module is deferred, so the DOM already exists, and
 // firing here means a boot failure below still records the page load. Inside main() it
 // sat after the items/schedule/ladders fetches, so a bad deploy reported silence.
+//
+// Order matters. Adoption must precede initDailyStats, or a player arriving from
+// the old domain registers a freshly-minted id and double-counts as a new unique.
+adoptVisitorIdFromUrl();
 void initDailyStats(import.meta.env.VITE_STATS_WORKER_URL);
+startPlayerSync(import.meta.env.VITE_STATS_WORKER_URL);
 
 main().catch((e) => {
   console.error(e);
