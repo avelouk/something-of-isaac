@@ -10,6 +10,9 @@
  *                  truth for each day's itemId + hints; public reads return one past/today row,
  *                  authed reads/writes (bearer ADMIN_TOKEN) edit the store.
  *   POST /feedback — player problem reports, forwarded to Telegram (see feedback.ts).
+ *   /player*     — cross-device player state, keyed by the same visitor UUID as /visit
+ *                  (see player.ts). POST /player/sync merges and returns; GET /player/stats
+ *                  is a bearer-authed coverage snapshot.
  *
  * Why KV for the schedule? The whole map is small (one JSON blob), read every page load.
  * Edge caching keeps origin reads near zero on the free plan; writes are rare (admin only).
@@ -22,6 +25,7 @@
 
 import { handleSchedule } from "./schedule.ts";
 import { handleFeedback } from "./feedback.ts";
+import { handlePlayer } from "./player.ts";
 import {
   addUtcDay,
   compareIsoDate,
@@ -32,6 +36,8 @@ import { isVisitorId } from "../../src/limits.ts";
 
 export interface Env {
   DAILY_STATS: DurableObjectNamespace;
+  /** Long-lived per-player state, sharded by visitor id (see player.ts). */
+  PLAYER_STORE: DurableObjectNamespace;
   /** Single source of truth for the daily schedule (items + hints). */
   SCHEDULE_KV: KVNamespace;
   ADMIN_TOKEN: string;
@@ -202,6 +208,13 @@ export default {
         return withCors(res);
       }
 
+      // Must be an explicit branch: everything unmatched falls through to
+      // today's stats DO below, which would 404 it.
+      if (path === "/player/sync" || path === "/player/stats") {
+        const res = await handlePlayer(request, env, json, (req) => isAuthorized(req, env), path);
+        return withCors(res);
+      }
+
       const day = utcTodayDateString();
       const id = env.DAILY_STATS.idFromName(day);
       const stub = env.DAILY_STATS.get(id);
@@ -212,6 +225,10 @@ export default {
     }
   },
 };
+
+// Re-exported here because wrangler.toml's `main` is this file — the runtime
+// looks for every Durable Object class on the entry module's exports.
+export { PlayerStore } from "./player.ts";
 
 export class DailyRoom implements DurableObject {
   constructor(

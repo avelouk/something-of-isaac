@@ -10,10 +10,21 @@ compatibility_date = "2024-11-01"
 name = "DAILY_STATS"
 class_name = "DailyRoom"
 
+# Cross-device player state (streaks + endless position), sharded 16 ways on the
+# first nibble of the visitor UUID. See worker/src/player.ts.
+[[durable_objects.bindings]]
+name = "PLAYER_STORE"
+class_name = "PlayerStore"
+
 # Workers Free plan: only SQLite-backed Durable Objects (not legacy key-value `new_classes`).
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DailyRoom"]
+
+# A new DO class needs its own tag. Never edit an applied tag — append.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PlayerStore"]
 
 # Daily schedule (itemId + hints per UTC date) — single source of truth. Create once with:
 #   npx wrangler kv namespace create SCHEDULE_KV --config worker/wrangler.toml

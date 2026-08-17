@@ -1,9 +1,10 @@
 # Daily stats + schedule worker
 
-This folder is a **Cloudflare Worker** that does two jobs:
+This folder is a **Cloudflare Worker** that does three jobs:
 
 1. **Daily stats** — a **Durable Object** stores one bucket per UTC day: unique visitor count (by anonymous UUID) and optional aggregate counts by country (Cloudflare geo on first visit only).
 2. **Schedule** — a **KV namespace** (`SCHEDULE_KV`) is the single source of truth for the daily puzzle: which collectible is the answer each UTC day, plus optional hand-written hints. The game fetches today's row from here; `public/data/schedule.json` in the repo is only an offline fallback.
+3. **Player state** — a second **Durable Object** class (`PlayerStore`) holds each player's streak history and endless position, keyed by the same anonymous UUID as `/visit`, so streaks survive a cleared cache, a new phone, and eventually a change of domain.
 
 ## Why a Durable Object for stats / KV for the schedule?
 
@@ -84,6 +85,25 @@ Public per-day reads strip the `hash` field and are edge-cached for ~60s. The fu
 | PUT    | `/schedule` | bearer | Replace the whole schedule (used by `npm run push:schedule` to seed). Validates every entry. |
 
 There is no authentication on `/visit`; the counter is public by design. Abuse could inflate counts; for a small puzzle game this is usually acceptable.
+
+### Player state (`PLAYER_STORE`)
+
+`localStorage` is origin-scoped, so without a server copy every returning player would start at zero the day the game moves to its own domain — and streaks are the whole retention mechanism. This endpoint is that copy.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST   | `/player/sync`  | public | Body `{ v: 1, visitorId, daily?, endless?, endlessNextRound? }`. Merges the submitted state into the stored one and returns the merged result plus `changed` and `updatedAt`. All three state fields are optional — sending none is a **pull**. |
+| GET    | `/player/stats` | bearer | Coverage snapshot across all shards: `{ players, updated1d, updated7d, updated30d, bytes, maxBytes, shards }`. |
+
+**One endpoint, always merge-and-return.** The merge (`src/playerState.ts`, shared with the client so the two can't drift) is commutative, associative and idempotent, so a sync carrying no local changes *is* a pull. `POST` rather than `GET /player/:id` keeps the visitor id out of request logs and out of any cache key.
+
+**The merge is additive and never replaces.** This matters: `storage.ts`'s `ensureSchema()` wipes local state on a schema bump, so a client can legitimately submit an empty history for a player who has months of it. The server keeps everything and hands it back, which turns a schema bump from data loss into a round trip. Histories are unioned by puzzle number (a win beats a loss for the same puzzle), re-sorted, and the aggregate is recomputed by replaying the same fold the client uses — client-submitted `played`/`won`/`currentStreak` are never trusted. `bestStreak` is monotone so a truncated history can't cost anyone their record.
+
+**Write budget.** State is stored canonically, so string equality is a valid "did anything change?" test and an unchanged sync writes nothing at all. A first page load — before the player has finished anything — creates no row, which keeps the private-mode UUID churn off the books. In practice that's ~1 write per player per day.
+
+**How much to trust it.** Same posture as `/visit`: unauthenticated, and **the visitor UUID is effectively the password**. Anyone holding one can read and merge into that player's stats. UUIDv4 makes guessing infeasible, and inflated numbers only affect the attacker's own stats since there is no leaderboard — but **nothing sensitive may ever go in this blob**. There is deliberately no rate limit: a replayed body merges to no change and writes nothing, so the write-skip *is* the rate limit. Growth is bounded instead by per-record validation, a 1200-record cap per bucket, a body-size cap, and an admission cap of 20,000 rows per shard (existing players always keep syncing).
+
+Rows are sharded 16 ways on the first hex nibble of the visitor id — uniform for UUIDv4. Rows are *cumulative* ids rather than active players, so a single instance would need re-sharding within a couple of years, and moving rows between Durable Objects later has no safe rollback.
 
 ### Example: export daily uniques
 
