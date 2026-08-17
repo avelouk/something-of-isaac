@@ -26,7 +26,7 @@ The schedule lives in the **backend**. The worker's **`SCHEDULE_KV`** namespace 
 
 ## Endless mode
 
-**`?endless=1`** (or the ∞ footer link) plays round N of a fixed pseudo-random permutation of all items — same sequence for every player, no repeats within a full cycle. Hints come from **`public/data/ladders.json`**, a pre-generated 6-hint ladder per item; anything missing falls back to the auto-generated metadata ladder. Endless rounds never touch daily progress, stats, or streaks (nothing is persisted; "NEXT ITEM →" reloads with the next round).
+**`?endless=1`** (or the ∞ footer link) plays round N of a fixed pseudo-random permutation of all items — same sequence for every player, no repeats within a full cycle. Hints come from **`public/data/ladders.json`**, a pre-generated 6-hint ladder per item; anything missing falls back to the auto-generated metadata ladder. Endless rounds never touch daily progress, stats, or streaks — they keep a separate aggregate under `idg:endless-stats` and a position under `idg:endless` ("NEXT ITEM →" reloads with the next round). No per-round progress is saved, so a reload mid-round starts it over.
 
 **Generating ladders:** **`npm run build:ladders`** fills every gap in `ladders.json` using the `claude` CLI (headless), few-shot prompted with the hand-authored hints pulled live from the worker so the style matches: one narrowing fact per hint — oblique effect property → name/trivia association → unlock method (from the wiki's Cargo achievement table, via `scripts/wiki-extra.json`) → identifying effect → sprite giveaway. Hint 1 is templated from item metadata (always accurate); hints 2–6 are generated, then validated (6 hints, length caps, no item-name leakage) with a retry pass. The script is incremental — re-run it after adding items (`refresh:wiki` first, it writes `wiki-extra.json`) and it only generates what's missing. Requires `WORKER_URL`/`ADMIN_TOKEN` in `.env.local` and a logged-in `claude` CLI.
 
@@ -52,6 +52,14 @@ We use a **SQLite-backed Durable Object** (required on **Workers Free**; same `c
 - **GitHub Actions:** add repository **Variable** **`VITE_STATS_WORKER_URL`** (same URL as the deployed worker) so production builds include it.
 
 The worker exposes **`POST /visit`** to browsers (returns today’s unique player count). For **daily totals by UTC date** since you started logging, use **`GET /stats/history`** with the same **`ADMIN_TOKEN`** as schedule writes — see **`worker/README.md`**.
+
+## Player state sync
+
+Streaks and endless position also sync to the worker (**`POST /player/sync`**), keyed by the same anonymous UUID as `/visit`, so they survive a cleared cache or a new phone. It is silent and best-effort: if the worker is unset or unreachable the game runs exactly as before, on `localStorage` alone.
+
+This exists mainly for the eventual move to a dedicated domain. `localStorage` is origin-scoped, so without a server copy every returning player would restart at zero — and so would their streak, which is the thing that brings them back. The server copy is only half of it: the visitor UUID is origin-scoped too, so a move must hand the old id to the new origin in the URL fragment (`#soi=<uuid>`), which `adoptVisitorIdFromUrl()` in `src/visitorId.ts` already accepts.
+
+The merge lives in `src/playerState.ts` and is imported by both the client and the worker so the two can't drift. It is additive and never replaces, which is what makes a `SCHEMA_VERSION` bump survivable: `ensureSchema()` wipes local state, the client pushes an empty history, the server keeps everything and hands it back. Check coverage with **`GET /player/stats`** (bearer `ADMIN_TOKEN`) — see **`worker/README.md`**.
 
 ### Schedule store (one-time worker setup)
 

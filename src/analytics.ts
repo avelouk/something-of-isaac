@@ -4,21 +4,7 @@
  */
 
 import { workerBase } from "./workerBase.ts";
-
-const VISITOR_KEY = "soi-visitor-id";
-
-function getVisitorId(): string {
-  try {
-    let id = localStorage.getItem(VISITOR_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(VISITOR_KEY, id);
-    }
-    return id;
-  } catch {
-    return "";
-  }
-}
+import { getVisitorId } from "./visitorId.ts";
 
 /**
  * If `workerBaseUrl` is set (VITE_STATS_WORKER_URL), registers this page load with the

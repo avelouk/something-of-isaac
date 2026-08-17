@@ -123,18 +123,44 @@ export function loadEndlessStats(): Stats {
   return readJSON<Stats>(ENDLESS_STATS_KEY) ?? emptyStats();
 }
 
-/** Endless aggregate, kept apart from daily stats; puzzleNumber holds the round. */
-export function recordEndlessResult(record: ResultRecord): Stats {
+export function saveStats(stats: Stats) {
   ensureSchema();
-  const stats = loadEndlessStats();
-  if (pushResult(stats, record)) writeJSON(ENDLESS_STATS_KEY, stats);
-  return stats;
+  writeJSON(STATS_KEY, stats);
 }
 
-export function recordResult(record: ResultRecord, currentPuzzle: number) {
+export function saveEndlessStats(stats: Stats) {
+  ensureSchema();
+  writeJSON(ENDLESS_STATS_KEY, stats);
+}
+
+/** Same monotone guard as markEndlessRoundComplete: a stale value from the
+ *  server must never roll a player backwards into rounds they have played. */
+export function saveEndlessProgress(nextRound: number) {
+  ensureSchema();
+  if (nextRound <= loadEndless().nextRound) return;
+  writeJSON(ENDLESS_KEY, { nextRound });
+}
+
+/**
+ * `added` is false when this puzzle/round was already recorded — the caller uses
+ * it to avoid re-syncing on every reload of an already-finished puzzle.
+ */
+/** Endless aggregate, kept apart from daily stats; puzzleNumber holds the round. */
+export function recordEndlessResult(record: ResultRecord): { stats: Stats; added: boolean } {
+  ensureSchema();
+  const stats = loadEndlessStats();
+  const added = pushResult(stats, record);
+  if (added) writeJSON(ENDLESS_STATS_KEY, stats);
+  return { stats, added };
+}
+
+export function recordResult(
+  record: ResultRecord,
+  currentPuzzle: number,
+): { stats: Stats; added: boolean } {
   ensureSchema();
   const stats = loadStats();
-  if (!pushResult(stats, record)) return stats;
+  if (!pushResult(stats, record)) return { stats, added: false };
 
   writeJSON(STATS_KEY, stats);
 
@@ -146,5 +172,5 @@ export function recordResult(record: ResultRecord, currentPuzzle: number) {
     if (Number.isFinite(n) && n < currentPuzzle) localStorage.removeItem(key);
   }
 
-  return stats;
+  return { stats, added: true };
 }
