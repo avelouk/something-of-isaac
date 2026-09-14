@@ -15,3 +15,5 @@ tsconfig.tsbuildinfo
 # These MUST NOT be committed — they're how only you can write to the live hints overlay.
 .env.local
 .dev.vars
+
+scripts/.sprite-cache/

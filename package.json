@@ -18,7 +18,8 @@
     "build:data": "npm run build:items && npm run refresh:wiki && npm run build:schedule",
     "admin": "tsx scripts/admin-server.ts",
     "build:ladders": "tsx scripts/generate-ladders.ts",
-    "refresh:wiki": "tsx scripts/wiki-refresh.ts"
+    "refresh:wiki": "tsx scripts/wiki-refresh.ts",
+    "describe:sprites": "tsx scripts/describe-sprites.ts"
   },
   "dependencies": {
     "seedrandom": "^3.0.5"

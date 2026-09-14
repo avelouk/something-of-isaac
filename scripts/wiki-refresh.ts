@@ -53,6 +53,8 @@ type WikiItem = {
   /** Achievement name from `unlocked by` — resolved to requirements via Cargo. */
   unlockedBy?: string;
   trivia?: string[];
+  effects?: string[];
+  notes?: string[];
 };
 
 async function api(params: Record<string, string>): Promise<any> {
@@ -162,9 +164,22 @@ function parseInfoboxParams(box: string): Record<string, string> {
   return params;
 }
 
-function parsePage(content: string): { id: number; item: WikiItem } | null {
-  const boxStart = content.search(/\{\{infobox (passive|activated) collectible/i);
-  if (boxStart < 0) return null;
+/**
+ * Every collectible infobox on the page. A page can carry more than one — the
+ * two halves of Broken Shovel share a single page — and returning only the
+ * first silently leaves the others on stale Platinum God data.
+ */
+function parsePages(content: string): Array<{ id: number; item: WikiItem }> {
+  const out: Array<{ id: number; item: WikiItem }> = [];
+  const boxRe = /\{\{infobox (passive|activated) collectible/gi;
+  for (let m = boxRe.exec(content); m; m = boxRe.exec(content)) {
+    const parsed = parseBox(content, m.index);
+    if (parsed) out.push(parsed);
+  }
+  return out;
+}
+
+function parseBox(content: string, boxStart: number): { id: number; item: WikiItem } | null {
   // The infobox ends at the matching `}}` — params never nest deeper than one
   // template level, so scan with a depth counter.
   let depth = 0;
@@ -186,7 +201,11 @@ function parsePage(content: string): { id: number; item: WikiItem } | null {
   const id = Number(params["id"]);
   if (!Number.isInteger(id) || id < 1) return null;
 
-  const qualityRaw = Number(params["quality"]);
+  // Quality is often DLC-conditional — `{{dlcalt|3|r+=2}}` means "3, but 2
+  // since Repentance". Number() on the raw template yields NaN, which used to
+  // drop the field and leave the stale Platinum God value on ~20% of items.
+  // stripWikitext already resolves dlcalt to the current-DLC value.
+  const qualityRaw = Number(stripWikitext(params["quality"] ?? ""));
   const dlcRaw = (params["dlc"] ?? "").toLowerCase();
 
   return {
@@ -199,20 +218,34 @@ function parsePage(content: string): { id: number; item: WikiItem } | null {
       recharge: params["recharge"] ? stripWikitext(params["recharge"]) : undefined,
       unlockedBy: params["unlocked by"] ? stripWikitext(params["unlocked by"]) : undefined,
       trivia: parseTrivia(content),
+      effects: parseSection(content, "Effect", 8),
+      notes: parseSection(content, "Note", 6),
     },
   };
 }
 
 /** Bullets from the page's == Trivia == section, stripped to plain text. */
 function parseTrivia(content: string): string[] | undefined {
-  const m = content.match(/==\s*Trivia\s*==\n([\s\S]*?)(?=\n==|$)/);
+  return parseSection(content, "Trivia", 5);
+}
+
+/**
+ * Top-level bullets from a named section, stripped to plain text.
+ *
+ * Effects and Notes are where the good oblique hints live — limitations,
+ * triggers, exact numbers, "does not work on X". The infobox description alone
+ * only yields the headline effect, which is hint 5/6 material, so a ladder
+ * built from it has nothing to say at hints 2–4.
+ */
+function parseSection(content: string, heading: string, max: number): string[] | undefined {
+  const m = content.match(new RegExp(`==\\s*${heading}s?\\s*==\\n([\\s\\S]*?)(?=\\n==|$)`, "i"));
   if (!m) return undefined;
   const bullets = m[1]
     .split("\n")
     .filter((l) => l.startsWith("*") && !l.startsWith("**"))
     .map((l) => stripWikitext(l.replace(/^\*+\s*/, "")))
-    .filter((l) => l.length >= 20)
-    .slice(0, 5);
+    .filter((l) => l.length >= 20 && l.length <= 300)
+    .slice(0, max);
   return bullets.length ? bullets : undefined;
 }
 
@@ -255,8 +288,7 @@ async function fetchWikiItems(titles: string[]): Promise<Map<number, WikiItem>> 
     for (const p of d.query.pages) {
       const content = p.revisions?.[0]?.slots?.main?.content;
       if (!content) continue;
-      const parsed = parsePage(content);
-      if (parsed) out.set(parsed.id, parsed.item);
+      for (const parsed of parsePages(content)) out.set(parsed.id, parsed.item);
     }
     console.log(`  fetched ${Math.min(i + TITLES_PER_REQUEST, titles.length)}/${titles.length} pages`);
   }
@@ -299,17 +331,25 @@ async function main() {
 
   // Generation-only extras: unlock method (achievement name → Cargo
   // requirements text) + trivia bullets, keyed by item id.
-  const extra: Record<string, { unlock?: string; trivia?: string[] }> = {};
+  const extra: Record<
+    string,
+    { unlock?: string; trivia?: string[]; effects?: string[]; notes?: string[] }
+  > = {};
   for (const it of items) {
     const w = wiki.get(it.id);
     if (!w) continue;
     const unlock = w.unlockedBy ? requirements.get(w.unlockedBy) : undefined;
-    if (unlock || w.trivia) {
-      extra[String(it.id)] = { ...(unlock ? { unlock } : {}), ...(w.trivia ? { trivia: w.trivia } : {}) };
+    if (unlock || w.trivia || w.effects || w.notes) {
+      extra[String(it.id)] = {
+        ...(unlock ? { unlock } : {}),
+        ...(w.trivia ? { trivia: w.trivia } : {}),
+        ...(w.effects ? { effects: w.effects } : {}),
+        ...(w.notes ? { notes: w.notes } : {}),
+      };
     }
   }
   writeFileSync(EXTRA_PATH, JSON.stringify(extra, null, 1));
-  console.log(`Wrote scripts/wiki-extra.json: ${Object.keys(extra).length} items with unlock/trivia.`);
+  console.log(`Wrote scripts/wiki-extra.json: ${Object.keys(extra).length} items with unlock/trivia/effects/notes.`);
   console.log(
     `Updated: ${quality} qualities, ${desc} descriptions, ${dlc} dlc tags, ${quote} quotes. ` +
       `${missing} of ${items.length} items not found on wiki (kept as-is).`,

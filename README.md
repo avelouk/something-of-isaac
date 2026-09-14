@@ -1,146 +1,114 @@
 # Something of Isaac
 
-A daily Wordle-like puzzle for *The Binding of Isaac*. Guess today's collectible with as few hints as possible.
+A daily Wordle-like puzzle for *The Binding of Isaac*: guess today's collectible with as few hints as possible.
 
 **Play:** [avelouk.com/something-of-isaac](https://avelouk.com/something-of-isaac/)
 
-Inspired by [this r/bindingofisaac thread](https://www.reddit.com/r/bindingofisaac/comments/1t12aqm/try_to_guess_the_item_with_the_least_amount_of/) — *“Try to guess the Item with the least amount of Tips!”*
+Inspired by [this r/bindingofisaac thread](https://www.reddit.com/r/bindingofisaac/comments/1t12aqm/try_to_guess_the_item_with_the_least_amount_of/).
 
 ## How to play
 
-You see one hint about today's item. Type a guess — name, pickup quote, effect, item pool, or a snippet of the description all match. If wrong, the next hint is revealed automatically. Six text hints, then an optional four-tile final round if you still have not guessed. Lower score (fewer hints used) is better. New puzzle every day at 00:00 UTC.
+One hint is shown. Type a guess — name, pickup quote, effect, pool or description all match. Wrong guess → next hint. Six hints, then an optional four-tile final round. Fewer hints = better score. New puzzle at 00:00 UTC.
 
-## Daily schedule & hints
+**Endless mode** (`?endless=1`, or the ∞ footer link): round N of a fixed permutation of all items, same for everyone. Separate stats, never touches the daily streak. No mid-round save — a reload restarts the round.
 
-The schedule lives in the **backend**. The worker's **`SCHEDULE_KV`** namespace is the single source of truth: each UTC day is one row — `date`, item id, optional **`hints`** (six strings), and a stable anti-cheat hash. The deployed game fetches just today's row from `GET /schedule/day?puzzle=<n>`; **`public/data/schedule.json`** is shipped only as an **offline fallback** if the worker is unreachable.
+## How it works
 
-**Generating the schedule:** **`npm run build:schedule`** rewrites `schedule.json` with **no duplicate items** — every item appears once per ~719-day cycle, then the pool reshuffles and loops, and no item recurs within **100 days**. Everything from launch through *today* (UTC) is preserved **verbatim** (item + hints); only the future is regenerated. Authored hints survive regeneration because the generator merges the live backend (`GET /schedule`) onto the base before writing. Push the result to the backend with **`npm run push:schedule`** (`PUT /schedule`).
+- **Static site** (Vite + TypeScript). Pushing `main` deploys a canary to GitHub Pages; production on avelouk.com is a manual step (see [Deploy](#deploy)).
+- **Cloudflare Worker** (`worker/`, free tier): the daily schedule (KV), player counts and player state (Durable Objects), and a feedback form that forwards to Telegram. See `worker/README.md`.
+- **Runs unattended.** The schedule is generated ~719 days ahead with no repeats, and every one of the 718 items has a pre-generated hint ladder. Nothing needs touching day to day.
 
-**Authoring items & hints:** run **`npm run admin`** (local-only UI on `127.0.0.1`) to pick a date (today or future UTC only), change the **answer item**, and edit the six hints. Past UTC dates are read-only (the worker rejects them with 403). The UI loads from and saves directly to the worker (`GET /api/schedule` → worker `GET /schedule`; `POST /api/save` → worker `POST /schedule/entry`), so both item and hints persist and changes appear on the live site within ~60s (cache TTL) — no git push or redeploy. See **Schedule store (one-time worker setup)** below.
+### Which hints the game shows
 
-**Which hints the game shows** (`hintsForPuzzle` in `src/hints.ts`), in order:
+`hintsForPuzzle` in `src/hints.ts`, first match wins:
 
-1. **`hints` on that day’s schedule row** — custom copy you added via admin.
-2. Else **`customHints` on the item** in `items.json` (legacy per-item overrides).
-3. Else **auto-generated** six-step ladder from item metadata (quality, type, pools, DLC, first description sentence, pickup quote from `quotes.json`).
+1. `hints` on the day's schedule row in the worker — what you write with `npm run admin`.
+2. `customHints` on the item in `items.json` (legacy, one item).
+3. The item's ladder in `public/data/ladders.json` — generated, covers all items. **This is what plays on any day you didn't author.** Endless mode always uses it.
+4. Auto hints from item metadata — unreachable in practice.
 
-## Endless mode
-
-**`?endless=1`** (or the ∞ footer link) plays round N of a fixed pseudo-random permutation of all items — same sequence for every player, no repeats within a full cycle. Hints come from **`public/data/ladders.json`**, a pre-generated 6-hint ladder per item; anything missing falls back to the auto-generated metadata ladder. Endless rounds never touch daily progress, stats, or streaks — they keep a separate aggregate under `idg:endless-stats` and a position under `idg:endless` ("NEXT ITEM →" reloads with the next round). No per-round progress is saved, so a reload mid-round starts it over.
-
-**Generating ladders:** **`npm run build:ladders`** fills every gap in `ladders.json` using the `claude` CLI (headless), few-shot prompted with the hand-authored hints pulled live from the worker so the style matches: one narrowing fact per hint — oblique effect property → name/trivia association → unlock method (from the wiki's Cargo achievement table, via `scripts/wiki-extra.json`) → identifying effect → sprite giveaway. Hint 1 is templated from item metadata (always accurate); hints 2–6 are generated, then validated (6 hints, length caps, no item-name leakage) with a retry pass. The script is incremental — re-run it after adding items (`refresh:wiki` first, it writes `wiki-extra.json`) and it only generates what's missing. Requires `WORKER_URL`/`ADMIN_TOKEN` in `.env.local` and a logged-in `claude` CLI.
-
-## Run locally
+## Day-to-day
 
 ```sh
 npm install
-npm run build:items  # one-time: items.json + quotes.json (see below)
-npm run dev          # http://localhost:5173/
-npm run admin        # optional: edit the backend schedule (item + hints)
+npm run dev      # http://localhost:5173/
+npm run admin    # local UI: set the answer item / write hints for today or a future UTC day
 ```
 
-You can also deploy a static build elsewhere (e.g. GitHub Pages at `https://<user>.github.io/something-of-isaac/`); set **`VITE_BASE`** if the base path differs. The share-to-clipboard line ends with the public URL **`https://avelouk.com/something-of-isaac/`** (see `SHARE_SITE_URL` in `src/share.ts`).
+**Authoring hints** with `npm run admin` saves straight to the worker; the live site picks it up within ~60s, no deploy. Past UTC days are read-only.
 
-## Daily stats (optional)
+**Fixing a bad generated ladder:** either author that day's hints in the admin (overrides the ladder), or delete the item's entry from `ladders.json`, run `npm run build:ladders`, and deploy.
 
-The game can show **how many distinct browsers played today** (UTC) using a **Cloudflare Worker** next to GitHub Pages: one anonymous UUID in `localStorage`, `POST` once per page load, footer line updates when **`VITE_STATS_WORKER_URL`** is set at build time.
+### Deploy
 
-We use a **SQLite-backed Durable Object** (required on **Workers Free**; same `ctx.storage` API you already use) so the counter stays consistent under concurrency; details and deploy steps are in **`worker/README.md`**.
+| Target | How |
+|---|---|
+| Canary — `avelouk.github.io/something-of-isaac/` | push to `main` |
+| **Production** — `avelouk.com/something-of-isaac/` | GitHub → Actions → *Deploy to GitHub Pages* → *Run workflow* → tick **Sync to production** |
+| Worker | `npm run deploy:stats` |
 
-- Deploy the worker: **`npm run deploy:stats`** (after **`npx wrangler login`** once).
-- Local worker: **`npm run dev:stats`**, then run Vite with `VITE_STATS_WORKER_URL=http://127.0.0.1:8787`.
-- **GitHub Actions:** add repository **Variable** **`VITE_STATS_WORKER_URL`** (same URL as the deployed worker) so production builds include it.
+Production sync mirrors `dist/` into the Quartz site repo (`SYNC_TARGET_REPO` / `SYNC_GITHUB_TOKEN` in the repo's Actions settings). Set the `VITE_STATS_WORKER_URL` repo Variable so builds know the worker URL.
 
-The worker exposes **`POST /visit`** to browsers (returns today’s unique player count). For **daily totals by UTC date** since you started logging, use **`GET /stats/history`** with the same **`ADMIN_TOKEN`** as schedule writes — see **`worker/README.md`**.
+## Data pipeline
+
+All generated; nothing in `public/data/` is hand-written. Run in this order after a game update or a hint-quality change. Each script is incremental and safe to re-run.
+
+| Step | Command | Writes | Notes |
+|---|---|---|---|
+| 1 | `npm run build:items` | `items.json`, `quotes.json` | Scrapes [Platinum God](https://platinumgod.co.uk/repentance), aligns IDs/sprites to an [Isaaconnect](https://github.com/AlexisL61/Isaaconnect) snapshot. |
+| 2 | `npm run refresh:wiki` | patches `items.json`; `scripts/wiki-extra.json` | Corrects quality/description/DLC/quote from [wiki.gg](https://bindingofisaacrebirth.wiki.gg) (Platinum God drifts), and collects unlock/effects/notes/trivia for the ladder generator. |
+| 3 | `npm run selfhost:sprites` | `public/data/sprites/*.webp` | Only if IDs changed. |
+| 4 | `npm run describe:sprites` | `scripts/sprite-descriptions.json` | Claude describes each sprite *without* being told the name (needs `ffmpeg`). ~20 items whose name *is* the drawing (Scissors, Stapler…) are rejected on purpose. |
+| 5 | `npm run build:ladders` | `public/data/ladders.json` | Claude writes hints 2–6 per item from the wiki facts + sprite description, few-shot on your hand-written ladders pulled from the worker. Hint 1 is templated. Validated for length and name leakage (the item's distinctive name words are banned, substring-matched — function words like "and"/"for" are exempt). |
+| 6 | `npm run build:schedule` | `public/data/schedule.json` | Every item once per cycle, none within 100 days. Past days and authored hints preserved. |
+| 7 | `npm run push:schedule` | worker KV | Seeds/replaces the live schedule. |
+
+Steps 4–5 need a logged-in `claude` CLI and ride out usage-limit windows with backoff (up to ~7h); if one gives up, re-run it. `build:ladders` also needs `WORKER_URL` and `ADMIN_TOKEN` in `.env.local`. Both scripts end with `Done: N/718` — re-run until N is 718 (ladders) or ~700 (sprites; the rest are the intentional rejects).
 
 ## Player state sync
 
-Streaks and endless position also sync to the worker (**`POST /player/sync`**), keyed by the same anonymous UUID as `/visit`. It is silent and best-effort: if the worker is unset or unreachable the game runs exactly as before, on `localStorage` alone.
+Streaks and endless position sync to the worker (`POST /player/sync`), keyed by the same anonymous UUID as the visit counter. Silent and best-effort; the game runs on `localStorage` alone if the worker is unreachable. The merge (`src/playerState.ts`, shared with the worker) is additive and never replaces, so a `SCHEMA_VERSION` wipe is a round trip, not data loss.
 
-**What this does and does not recover.** The visitor UUID lives in `localStorage` too, so it is the key *and* it is stored in the thing that gets cleared. Server state is recoverable only when that id survives:
+The UUID itself lives in `localStorage`, so server state is only recoverable while the id survives:
 
-| Scenario | Recovers? | Why |
-|---|---|---|
-| `SCHEMA_VERSION` bump | **yes** | `ensureSchema()` wipes only `idg:*` and deliberately spares `soi-visitor-id` |
-| Domain move with the `#soi=` handoff | **yes** | the old origin hands the id to the new one |
-| Clearing the browser *cache* | n/a | never touched `localStorage` in the first place |
-| "Clear cookies and site data" | **no** | takes the UUID with it |
-| A new phone or a different browser | **no** | `localStorage` does not travel |
-| Safari ITP eviction after 7 idle days | **no** | deletes script-writable storage, id included |
+| Scenario | Recovers? |
+|---|---|
+| `SCHEMA_VERSION` bump | yes — `ensureSchema()` spares `soi-visitor-id` |
+| Domain move via `#soi=<uuid>` fragment handoff (`adoptVisitorIdFromUrl`) | yes |
+| "Clear cookies and site data", new device, Safari ITP after 7 idle days | no |
 
-Genuine cross-device recovery would need a user-visible recovery code (show the UUID, accept a pasted one). That was deliberately left out of v1 — it makes the id, which is effectively a password, visible and shareable.
+Cross-device recovery would need a user-visible recovery code; left out deliberately since the UUID is effectively a password.
 
-This exists mainly for the eventual move to a dedicated domain. `localStorage` is origin-scoped, so without a server copy every returning player would restart at zero — and so would their streak, which is the thing that brings them back. The server copy is only half of it: the visitor UUID is origin-scoped too, so a move must hand the old id to the new origin in the URL fragment (`#soi=<uuid>`), which `adoptVisitorIdFromUrl()` in `src/visitorId.ts` already accepts.
+## One-time setup
 
-The merge lives in `src/playerState.ts` and is imported by both the client and the worker so the two can't drift. It is additive and never replaces, which is what makes a `SCHEMA_VERSION` bump survivable: `ensureSchema()` wipes local state, the client pushes an empty history, the server keeps everything and hands it back. Check coverage with **`GET /player/stats`** (bearer `ADMIN_TOKEN`) — see **`worker/README.md`**.
-
-### Schedule store (one-time worker setup)
-
-The same worker holds the daily schedule (item id + hints per UTC date) in the **`SCHEDULE_KV`** namespace. Per-day reads (`/schedule/day`, `/schedule/today`) are public and edge-cached for 60s and strip the hash; the full dump (`GET /schedule`) and all writes (`POST /schedule/entry`, `PUT /schedule`) are bearer-token gated.
-
-1. Create the KV namespace and paste its id into `worker/wrangler.toml`:
-   ```sh
-   npx wrangler kv namespace create SCHEDULE_KV --config worker/wrangler.toml
-   ```
-2. Generate a random admin token and store it as a worker secret:
-   ```sh
-   openssl rand -hex 32                                         # copy the output
-   npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.toml   # paste it
-   ```
-3. Deploy the worker: **`npm run deploy:stats`**.
-4. Create **`.env.local`** in the repo root (already gitignored) for the admin server and `push:schedule`:
-   ```sh
-   WORKER_URL=https://something-of-isaac-stats.<your-subdomain>.workers.dev
-   ADMIN_TOKEN=<same token you put as the worker secret>
-   ```
-5. Seed the store from the generated file: **`npm run build:schedule`** then **`npm run push:schedule`**.
-
-After this, **`npm run admin`** reads from and writes straight to the worker. The repo is safe to keep public: a fork that runs the admin gets a 401 from the worker because they don't have the token.
-
-### Feedback → Telegram (one-time setup)
-
-The footer's **REPORT A PROBLEM** link opens a one-textarea modal that `POST`s to the worker's **`/feedback`**, which forwards the message to a Telegram chat (with puzzle number and country). Nothing is stored — Telegram is the inbox. Length-capped at 1000 chars plus a soft cap of 50 reports per UTC day (KV counter) so the endpoint can't be used to flood your phone. If the secrets are unset the endpoint returns 503 and the modal shows "FAILED".
-
-1. Create a bot: message [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token.
-2. Send your new bot any message (this opens the chat), then get your chat id from
-   `https://api.telegram.org/bot<token>/getUpdates` (look for `"chat":{"id":...}`).
-3. Store both as worker secrets and redeploy:
-   ```sh
-   npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
-   npx wrangler secret put TELEGRAM_CHAT_ID --config worker/wrangler.toml
-   npm run deploy:stats
-   ```
-
-## How `items.json` is built
-
-Item metadata is **not** hand-written. It is generated by `scripts/build-items.ts`:
-
-1. **Platinum God** — The script fetches the [Repentance cheat sheet](https://platinumgod.co.uk/repentance) (HTML) and parses each collectible `<li class="textbox">`: item ID, name, quality, type, item pools, pickup line, description, DLC hints from CSS classes, etc. Trinkets are skipped.
-
-2. **Isaaconnect** — IDs and sprite URLs are aligned to a local [Isaaconnect](https://github.com/AlexisL61/Isaaconnect) `items.json` snapshot (see `ISAACONNECT_ITEMS` in `build-items.ts`). Only items that appear in that list are kept so IDs and art stay consistent.
-
-3. **wiki.gg refresh** — **`npm run refresh:wiki`** patches the volatile fields from the [Binding of Isaac wiki](https://bindingofisaacrebirth.wiki.gg) (actively maintained, unlike Platinum God which drifts): quality, description, DLC tag, pickup quote, and active-item recharge (appended to the description). Items are joined by in-game id via the wiki infoboxes, so page titles never need to match. Run it after `build:items`, and re-run `build:ladders` afterwards since the hints are generated from these descriptions.
-
-3. **Output** — The script writes:
-   - `public/data/items.json` — one entry per item (pickup quote stripped out for size).
-   - `public/data/quotes.json` — map of item id → pickup quote (used for search + hints).
-
-After a game update, re-run **`npm run build:items`**, then refresh sprites if IDs changed:
+**Worker.** `npx wrangler login`, then:
 
 ```sh
-npm run selfhost:sprites   # download missing sprites from current `img` URLs, then set img → data/sprites/{id}.webp
+npx wrangler kv namespace create SCHEDULE_KV --config worker/wrangler.toml   # paste id into wrangler.toml
+openssl rand -hex 32                                                  # keep this
+npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.toml     # paste it
+npm run deploy:stats
 ```
 
-Or step by step: **`npm run download:sprites`**, then **`npm run localize:sprites`**. Commit `items.json`, `quotes.json`, and `public/data/sprites/`.
+Then create `.env.local` (gitignored) for the admin server and scripts:
 
-## Credits
+```
+WORKER_URL=https://something-of-isaac-stats.<you>.workers.dev
+ADMIN_TOKEN=<same token>
+```
 
-This is a fan project. Not affiliated with Edmund McMillen, Nicalis, or the official Binding of Isaac team.
+Seed the schedule: `npm run build:schedule && npm run push:schedule`. The repo is safe to keep public — without the token the worker returns 401.
 
-- Item data derived primarily from [Platinum God](https://platinumgod.co.uk/repentance), merged with [Isaaconnect](https://github.com/AlexisL61/Isaaconnect) for IDs and initial sprite URLs. Sprites are **self-hosted** under `public/data/sprites/` after `download:sprites` + `localize:sprites` (see above).
-- Reddit inspiration: [Try to guess the item with the least amount of…](https://www.reddit.com/r/bindingofisaac/comments/1t12aqm/try_to_guess_the_item_with_the_least_amount_of/).
-- Seeded-RNG and share-string patterns ported from [Isaaconnect](https://github.com/AlexisL61/Isaaconnect) (GPLv3).
+**Feedback → Telegram.** The footer's REPORT A PROBLEM form posts to `/feedback`, which forwards to a Telegram chat (nothing stored; 1000 chars, 50/day cap). Create a bot via [@BotFather](https://t.me/BotFather), message it once, read your chat id from `https://api.telegram.org/bot<token>/getUpdates`, then:
 
-## License
+```sh
+npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
+npx wrangler secret put TELEGRAM_CHAT_ID --config worker/wrangler.toml
+npm run deploy:stats
+```
 
-GPLv3 — inherited from Isaaconnect (whose seed helpers this project reuses).
+**GitHub Actions.** Variable `VITE_STATS_WORKER_URL`; for production sync, variable `SYNC_TARGET_REPO` (optionally `SYNC_TARGET_BRANCH`, `SYNC_TARGET_DIR`, default `content/something-of-isaac`) and secret `SYNC_GITHUB_TOKEN`.
+
+## Credits & license
+
+Fan project, not affiliated with Edmund McMillen, Nicalis or the official team. Item data from [Platinum God](https://platinumgod.co.uk/repentance) and [wiki.gg](https://bindingofisaacrebirth.wiki.gg); IDs and initial sprite URLs from [Isaaconnect](https://github.com/AlexisL61/Isaaconnect), whose seeded-RNG and share-string helpers are reused. **GPLv3**, inherited from Isaaconnect.
