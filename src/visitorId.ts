@@ -46,16 +46,26 @@ export function adoptVisitorIdFromUrl(): void {
     const hash = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
     if (!hash.startsWith(ADOPT_PREFIX)) return;
 
-    const candidate = decodeURIComponent(hash.slice(ADOPT_PREFIX.length)).trim().toLowerCase();
+    // `soi=<uuid>` from the bridge on the old domain; `soi=<uuid>&replace=1` when
+    // the player asked for it themselves via the "bring your streak over" link.
+    const params = new URLSearchParams(hash);
+    const candidate = (params.get("soi") ?? "").trim().toLowerCase();
+    const replace = params.get("replace") === "1";
     // Strip it whether or not we adopt: it has served its purpose, and leaving
     // it in the address bar invites it into a screenshot or a shared link.
     history.replaceState(null, "", location.pathname + location.search);
 
     if (!isVisitorId(candidate)) return;
-    // Never clobber an existing identity — this browser may already have real
-    // history of its own, and the server merge will reconcile the two anyway
-    // only if we keep the id it already knows.
-    if (localStorage.getItem(VISITOR_KEY)) return;
+    // Never clobber an existing identity on the automatic path — this browser
+    // may already have real history of its own, and the server merge will
+    // reconcile the two anyway only if we keep the id it already knows.
+    //
+    // An explicit, user-initiated handoff is the one exception: that player
+    // already loaded this domain once (so has a fresh id with nothing behind
+    // it) and is asking for their old one back. Overwriting is safe because
+    // the next sync pushes whatever is local up under the old id, and the
+    // merge is additive — the two histories combine, neither is lost.
+    if (localStorage.getItem(VISITOR_KEY) && !replace) return;
 
     localStorage.setItem(VISITOR_KEY, candidate);
   } catch {

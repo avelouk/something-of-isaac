@@ -741,6 +741,46 @@ async function main() {
     stopTimer();
     recordGameResult();
   }
+
+  void showMigratePromptIfNeeded();
+}
+
+/** Dismissal lives outside the idg: namespace so a schema wipe doesn't resurrect it. */
+const MIGRATE_DISMISSED_KEY = "soi-migrate-dismissed";
+/** The old-domain bridge keeps working forever; this line just stops nagging. */
+const MIGRATE_PROMPT_UNTIL = "2027-01-01";
+
+/**
+ * "Played before on avelouk.com? Bring your streak over." — for players who
+ * arrive on the new domain directly (a friend's link, updated share text) and
+ * so never passed through the bridge. The link round-trips through the old
+ * origin, the only place with first-party access to that localStorage; it
+ * comes back with #soi=<old id>&replace=1 (see visitorId.ts).
+ *
+ * Only when there's no history at all — new players see it too, harmlessly.
+ * Waits for the first sync so a server-restored history hides it.
+ */
+async function showMigratePromptIfNeeded(): Promise<void> {
+  if (new Date().toISOString().slice(0, 10) >= MIGRATE_PROMPT_UNTIL) return;
+  try {
+    if (localStorage.getItem(MIGRATE_DISMISSED_KEY)) return;
+  } catch {
+    return; // blocked storage: nothing to migrate into
+  }
+  await playerSyncSettled();
+  if (loadStats().history.length || loadEndlessStats().history.length) return;
+
+  const prompt = $("migrate-prompt");
+  prompt.hidden = false;
+  $("migrate-dismiss").addEventListener("click", (e) => {
+    e.preventDefault();
+    prompt.hidden = true;
+    try {
+      localStorage.setItem(MIGRATE_DISMISSED_KEY, "1");
+    } catch {
+      // fine, it just comes back next load
+    }
+  });
 }
 
 // Outside main() on purpose: this module is deferred, so the DOM already exists, and

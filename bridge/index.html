@@ -1,0 +1,87 @@
+<!doctype html>
+<!--
+  Bridge page for the OLD url, avelouk.com/something-of-isaac/.
+
+  Source of truth lives here (something-of-isaac/bridge/index.html); the deployed
+  copy is content/something-of-isaac/index.html in the Quartz repo, committed there
+  by hand. Keep it permanently: a 301 never runs JavaScript, so it could never hand
+  the visitor id across origins, and every late returner would lose their streak.
+
+  What it does, in order:
+    1. Reads the visitor id + local stats from this origin's localStorage.
+    2. Pushes them to the worker and waits (capped at 3s) so nothing in-flight is lost.
+    3. location.replace() to somethingofisaac.com, preserving ?puzzle=/?endless= and
+       carrying the id in the URL *fragment* (#soi=...). Fragments are never sent to
+       a server, so the id — a bearer credential for that player's stats — stays out
+       of logs. Do not "simplify" it to a query param.
+
+  Deliberately loads no game bundle: the bundle would call /visit and count every
+  migrating player twice. Also why this is fast.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Something of Isaac has moved</title>
+    <link rel="canonical" href="https://somethingofisaac.com/" />
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+             background: #1a1410; color: #e8dcc8; font: 16px/1.5 system-ui, sans-serif; text-align: center; }
+      a { color: #f0c860; }
+    </style>
+  </head>
+  <body>
+    <p>
+      Something of Isaac has moved to <a id="link" href="https://somethingofisaac.com/">somethingofisaac.com</a>.
+      <br />Taking you there, and bringing your streak along…
+    </p>
+    <noscript><p>JavaScript is off — <a href="https://somethingofisaac.com/">click here to continue</a>.</p></noscript>
+    <script>
+      (function () {
+        var NEW_ORIGIN = "https://somethingofisaac.com";
+        var WORKER = "https://something-of-isaac-stats.avelouk.workers.dev";
+        var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+        // ?migrate=1 is the "bring your streak over" round trip from the new
+        // domain; it must not leak into the destination URL. Everything else
+        // (?puzzle=N, ?endless=N) is a deep link and rides along.
+        var params = new URLSearchParams(location.search);
+        var explicit = params.get("migrate") === "1";
+        params.delete("migrate");
+        var search = params.toString() ? "?" + params.toString() : "";
+
+        var id = null, daily = null, endless = null, nextRound = 1;
+        try {
+          var raw = localStorage.getItem("soi-visitor-id");
+          if (raw && UUID.test(raw.trim().toLowerCase())) id = raw.trim().toLowerCase();
+          daily = JSON.parse(localStorage.getItem("idg:stats") || "null");
+          endless = JSON.parse(localStorage.getItem("idg:endless-stats") || "null");
+          var prog = JSON.parse(localStorage.getItem("idg:endless") || "null");
+          if (prog && Array.isArray(prog.playedIds)) nextRound = prog.playedIds.length + 1;
+          else if (prog && prog.nextRound > 0) nextRound = prog.nextRound;
+        } catch (e) { /* blocked storage: redirect without a handoff */ }
+
+        var target = NEW_ORIGIN + "/" + search + (id ? "#soi=" + id + (explicit ? "&replace=1" : "") : "");
+        document.getElementById("link").href = target;
+        var go = function () { location.replace(target); };
+
+        if (!id) { go(); return; }
+
+        // Flush local state to the server first. The merge is additive, so a
+        // redundant push is harmless; a lost one could cost today's result.
+        var done = false;
+        var finish = function () { if (!done) { done = true; go(); } };
+        setTimeout(finish, 3000);
+        try {
+          fetch(WORKER + "/player/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ v: 1, visitorId: id, daily: daily, endless: endless, endlessNextRound: nextRound }),
+            keepalive: true
+          }).then(finish, finish);
+        } catch (e) { finish(); }
+      })();
+    </script>
+  </body>
+</html>

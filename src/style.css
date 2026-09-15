@@ -733,6 +733,14 @@ body::before {
   color: #8a7268;
   letter-spacing: 1px;
 }
+.footer .migrate-prompt {
+  margin-top: 8px;
+  color: #8a7268;
+  letter-spacing: 1px;
+}
+.footer .migrate-prompt a {
+  color: var(--gold-soft);
+}
 
 /* FOOTER ACTION CHIPS */
 .footer-actions {
