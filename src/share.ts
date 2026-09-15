@@ -6,7 +6,7 @@
  *   Something of Isaac · 2026-05-02
  *   ✓ 3/6 hints · 2 tries
  *   🟩🟩🟩⬜⬜⬜  ⏱ 00:42
- *   https://somethingofisaac.com/
+ *   https://avelouk.com/something-of-isaac/
  *
  * If the player went through the multiple-choice round, a 🎯 is
  * appended to the score line — wins-via-MC and losses both carry it.
@@ -14,8 +14,17 @@
 
 import { HINT_COUNT } from "./hints.ts";
 
-/** Public site — appended to copied share text. */
-export const SHARE_SITE_URL = "https://somethingofisaac.com/";
+/**
+ * Public site — appended to copied share text.
+ *
+ * Deliberately still the OLD url after the move to somethingofisaac.com. That
+ * url is a bridge page that hands the visitor id across origins, so a friend
+ * who clicks a shared result is migrated automatically; a direct link to the
+ * new domain would land them with no history and only the "bring your streak
+ * over" prompt. Flip this to https://somethingofisaac.com/ once the old
+ * audience has drifted over (same horizon as MIGRATE_PROMPT_UNTIL in main.ts).
+ */
+export const SHARE_SITE_URL = "https://avelouk.com/something-of-isaac/";
 
 const EMPTY = "⬜";
 
