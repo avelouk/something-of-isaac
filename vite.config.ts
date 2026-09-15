@@ -1,9 +1,9 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
-// Production deploys to a GitHub Pages project URL:
-// https://<user>.github.io/something-of-isaac/
-// Override with VITE_BASE if the repo is renamed or a custom domain is set.
+// Production lives at https://somethingofisaac.com/ (GitHub Pages + custom domain);
+// the deploy workflow sets VITE_BASE="/". Without it a production build falls back
+// to the old project-page path, which only matters for a local `vite preview`.
 export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE ?? (mode === "production" ? "/something-of-isaac/" : "./"),
   build: {

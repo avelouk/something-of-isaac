@@ -2,7 +2,7 @@
 
 A daily Wordle-like puzzle for *The Binding of Isaac*: guess today's collectible with as few hints as possible.
 
-**Play:** [avelouk.com/something-of-isaac](https://avelouk.com/something-of-isaac/)
+**Play:** [somethingofisaac.com](https://somethingofisaac.com/)
 
 Inspired by [this r/bindingofisaac thread](https://www.reddit.com/r/bindingofisaac/comments/1t12aqm/try_to_guess_the_item_with_the_least_amount_of/).
 
@@ -14,7 +14,7 @@ One hint is shown. Type a guess — name, pickup quote, effect, pool or descript
 
 ## How it works
 
-- **Static site** (Vite + TypeScript). Pushing `main` deploys a canary to GitHub Pages; production on avelouk.com is a manual step (see [Deploy](#deploy)).
+- **Static site** (Vite + TypeScript). Pushing `main` deploys to GitHub Pages at somethingofisaac.com (see [Deploy](#deploy)).
 - **Cloudflare Worker** (`worker/`, free tier): the daily schedule (KV), player counts and player state (Durable Objects), and a feedback form that forwards to Telegram. See `worker/README.md`.
 - **Runs unattended.** The schedule is generated ~719 days ahead with no repeats, and every one of the 718 items has a pre-generated hint ladder. Nothing needs touching day to day.
 
@@ -43,11 +43,10 @@ npm run admin    # local UI: set the answer item / write hints for today or a fu
 
 | Target | How |
 |---|---|
-| Canary — `avelouk.github.io/something-of-isaac/` | push to `main` |
-| **Production** — `avelouk.com/something-of-isaac/` | GitHub → Actions → *Deploy to GitHub Pages* → *Run workflow* → tick **Sync to production** |
+| **Production** — `somethingofisaac.com` | push to `main` (GitHub Pages, custom domain from `public/CNAME`) |
 | Worker | `npm run deploy:stats` |
 
-Production sync mirrors `dist/` into the Quartz site repo (`SYNC_TARGET_REPO` / `SYNC_GITHUB_TOKEN` in the repo's Actions settings). Set the `VITE_STATS_WORKER_URL` repo Variable so builds know the worker URL.
+The old URL, `avelouk.com/something-of-isaac/`, is a static bridge page in the Quartz repo (`content/something-of-isaac/index.html`): it syncs the player's state, then `location.replace()`s to the new domain with `#soi=<visitor id>` so streaks survive the move. It is kept permanently — a 301 can't run JS, so it could never hand the id over. Set the `VITE_STATS_WORKER_URL` repo Variable so builds know the worker URL.
 
 ## Data pipeline
 

@@ -6,7 +6,7 @@
  *   Something of Isaac · 2026-05-02
  *   ✓ 3/6 hints · 2 tries
  *   🟩🟩🟩⬜⬜⬜  ⏱ 00:42
- *   https://avelouk.com/something-of-isaac/
+ *   https://somethingofisaac.com/
  *
  * If the player went through the multiple-choice round, a 🎯 is
  * appended to the score line — wins-via-MC and losses both carry it.
@@ -15,7 +15,7 @@
 import { HINT_COUNT } from "./hints.ts";
 
 /** Public site — appended to copied share text. */
-export const SHARE_SITE_URL = "https://avelouk.com/something-of-isaac/";
+export const SHARE_SITE_URL = "https://somethingofisaac.com/";
 
 const EMPTY = "⬜";
 
