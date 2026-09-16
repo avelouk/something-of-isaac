@@ -810,6 +810,12 @@ async function showMigratePromptIfNeeded(): Promise<void> {
 // Order matters. Adoption must precede initDailyStats, or a player arriving from
 // the old domain registers a freshly-minted id and double-counts as a new unique.
 adoptVisitorIdFromUrl();
+// Editing only the fragment of an open page fires hashchange without a reload,
+// so a #soi= pasted into a live tab would silently do nothing. The bridge always
+// arrives as a fresh navigation; this is for hand-typed handoffs.
+window.addEventListener("hashchange", () => {
+  if (location.hash.startsWith("#soi=")) location.reload();
+});
 void initDailyStats(import.meta.env.VITE_STATS_WORKER_URL);
 startPlayerSync(import.meta.env.VITE_STATS_WORKER_URL);
 
