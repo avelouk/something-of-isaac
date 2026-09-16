@@ -733,6 +733,20 @@ body::before {
   color: #8a7268;
   letter-spacing: 1px;
 }
+.stats-migrate {
+  display: block;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #3a2422;
+  font-family: "VT323", monospace;
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #8a7268;
+  text-decoration: none;
+}
+.stats-migrate:hover {
+  color: var(--gold-soft);
+}
 .footer .migrate-prompt {
   margin-top: 8px;
   color: #8a7268;

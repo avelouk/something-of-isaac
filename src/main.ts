@@ -403,6 +403,17 @@ async function showStatsFor(endless: boolean) {
   else showStatsPopover(loadStats());
 }
 
+/** Dismissal lives outside the idg: namespace so a schema wipe doesn't resurrect it. */
+const MIGRATE_DISMISSED_KEY = "soi-migrate-dismissed";
+/** The old-domain bridge keeps working forever; the prompts just stop nagging. */
+const MIGRATE_PROMPT_UNTIL = "2027-01-01";
+/** Round-trips through the old origin; the bridge there sends back #soi=<id>&replace=1. */
+const MIGRATE_URL = "https://avelouk.com/something-of-isaac/?migrate=1";
+
+function migrationWindowOpen(): boolean {
+  return new Date().toISOString().slice(0, 10) < MIGRATE_PROMPT_UNTIL;
+}
+
 function showStatsPopover(stats: Stats, title = "▸ STATS") {
   const { modal: pop, dismiss } = openModal({ className: "stats-pop", closeButton: false });
   pop.style.position = "static";
@@ -448,6 +459,18 @@ function showStatsPopover(stats: Stats, title = "▸ STATS") {
   closeBtn.addEventListener("click", dismiss);
   closeRow.appendChild(closeBtn);
   pop.appendChild(closeRow);
+
+  // Always offered here, whatever the local history: a player who already
+  // played a few rounds on this domain before remembering their old streak
+  // has lost the footer line (it only shows on an empty history) but still
+  // needs a way in. The merge is additive, so nothing here is at risk.
+  if (migrationWindowOpen()) {
+    const migrate = document.createElement("a");
+    migrate.className = "stats-migrate";
+    migrate.href = MIGRATE_URL;
+    migrate.textContent = "Played before on avelouk.com? Bring your streak over →";
+    pop.appendChild(migrate);
+  }
 }
 
 async function main() {
@@ -745,10 +768,6 @@ async function main() {
   void showMigratePromptIfNeeded();
 }
 
-/** Dismissal lives outside the idg: namespace so a schema wipe doesn't resurrect it. */
-const MIGRATE_DISMISSED_KEY = "soi-migrate-dismissed";
-/** The old-domain bridge keeps working forever; this line just stops nagging. */
-const MIGRATE_PROMPT_UNTIL = "2027-01-01";
 
 /**
  * "Played before on avelouk.com? Bring your streak over." — for players who
@@ -758,10 +777,11 @@ const MIGRATE_PROMPT_UNTIL = "2027-01-01";
  * comes back with #soi=<old id>&replace=1 (see visitorId.ts).
  *
  * Only when there's no history at all — new players see it too, harmlessly.
- * Waits for the first sync so a server-restored history hides it.
+ * Waits for the first sync so a server-restored history hides it. The same
+ * link also lives in the STATS modal for anyone who has history already.
  */
 async function showMigratePromptIfNeeded(): Promise<void> {
-  if (new Date().toISOString().slice(0, 10) >= MIGRATE_PROMPT_UNTIL) return;
+  if (!migrationWindowOpen()) return;
   try {
     if (localStorage.getItem(MIGRATE_DISMISSED_KEY)) return;
   } catch {
