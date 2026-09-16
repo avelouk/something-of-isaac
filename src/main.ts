@@ -407,7 +407,7 @@ async function showStatsFor(endless: boolean) {
 const MIGRATE_DISMISSED_KEY = "soi-migrate-dismissed";
 /** The old-domain bridge keeps working forever; the prompts just stop nagging. */
 const MIGRATE_PROMPT_UNTIL = "2027-01-01";
-/** Round-trips through the old origin; the bridge there sends back #soi=<id>&replace=1. */
+/** Round-trips through the old origin; the bridge there sends back #soi=<old id>. */
 const MIGRATE_URL = "https://avelouk.com/something-of-isaac/?migrate=1";
 
 function migrationWindowOpen(): boolean {
@@ -774,7 +774,7 @@ async function main() {
  * arrive on the new domain directly (a friend's link, updated share text) and
  * so never passed through the bridge. The link round-trips through the old
  * origin, the only place with first-party access to that localStorage; it
- * comes back with #soi=<old id>&replace=1 (see visitorId.ts).
+ * comes back with #soi=<old id> (see visitorId.ts).
  *
  * Only when there's no history at all — new players see it too, harmlessly.
  * Waits for the first sync so a server-restored history hides it. The same

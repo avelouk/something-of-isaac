@@ -47,7 +47,6 @@
         // domain; it must not leak into the destination URL. Everything else
         // (?puzzle=N, ?endless=N) is a deep link and rides along.
         var params = new URLSearchParams(location.search);
-        var explicit = params.get("migrate") === "1";
         params.delete("migrate");
         var search = params.toString() ? "?" + params.toString() : "";
 
@@ -62,7 +61,7 @@
           else if (prog && prog.nextRound > 0) nextRound = prog.nextRound;
         } catch (e) { /* blocked storage: redirect without a handoff */ }
 
-        var target = NEW_ORIGIN + "/" + search + (id ? "#soi=" + id + (explicit ? "&replace=1" : "") : "");
+        var target = NEW_ORIGIN + "/" + search + (id ? "#soi=" + id : "");
         document.getElementById("link").href = target;
         var go = function () { location.replace(target); };
 

@@ -46,27 +46,19 @@ export function adoptVisitorIdFromUrl(): void {
     const hash = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
     if (!hash.startsWith(ADOPT_PREFIX)) return;
 
-    // `soi=<uuid>` from the bridge on the old domain; `soi=<uuid>&replace=1` when
-    // the player asked for it themselves via the "bring your streak over" link.
-    const params = new URLSearchParams(hash);
-    const candidate = (params.get("soi") ?? "").trim().toLowerCase();
-    const replace = params.get("replace") === "1";
+    const candidate = (new URLSearchParams(hash).get("soi") ?? "").trim().toLowerCase();
     // Strip it whether or not we adopt: it has served its purpose, and leaving
     // it in the address bar invites it into a screenshot or a shared link.
     history.replaceState(null, "", location.pathname + location.search);
 
     if (!isVisitorId(candidate)) return;
-    // Never clobber an existing identity on the automatic path — this browser
-    // may already have real history of its own, and the server merge will
-    // reconcile the two anyway only if we keep the id it already knows.
-    //
-    // An explicit, user-initiated handoff is the one exception: that player
-    // already loaded this domain once (so has a fresh id with nothing behind
-    // it) and is asking for their old one back. Overwriting is safe because
-    // the next sync pushes whatever is local up under the old id, and the
-    // merge is additive — the two histories combine, neither is lost.
-    if (localStorage.getItem(VISITOR_KEY) && !replace) return;
-
+    // Adopt even over an existing id. This browser may have history of its own
+    // (played here before clicking an old link), but none of it is lost: the
+    // idg:* keys stay put, the next sync pushes them up under the adopted id,
+    // and the merge is additive — the two histories combine. The row under the
+    // abandoned id is always a subset of what's local, so nothing is orphaned
+    // that matters. Refusing here would silently strand the older streak,
+    // which is the worse failure.
     localStorage.setItem(VISITOR_KEY, candidate);
   } catch {
     // Blocked storage, or a document without a usable history API.
