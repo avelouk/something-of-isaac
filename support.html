@@ -7,7 +7,7 @@
     <title>Support — Something of Isaac</title>
     <meta
       name="description"
-      content="Ways to support Something of Isaac: optional tip jar, Amazon affiliate link, and official Nicalis / Steam storefronts."
+      content="Support Something of Isaac: an optional tip jar. The game is free and stays free."
     />
     <link rel="icon" href="./img/questionmark_logo.png" type="image/png" />
     <link rel="stylesheet" href="/src/style.css" />
@@ -44,38 +44,24 @@
         </div>
 
         <p class="support-lede">
-          Fan puzzle, free to play. If you want to chip in: tip jar below, or shop through the
-          links. Only Amazon pays me a small commission (marked <span class="badge">AFFILIATE</span>).
+          Fan puzzle, free to play, no account, no paywall. It costs a little to run — domain,
+          hosting, and the hours that go into writing hints — and there are two ways that gets
+          covered.
         </p>
 
         <h3 class="support-h">☕ Tip jar</h3>
-        <p>Helps with the domain and hosting.</p>
+        <p>Entirely optional. Helps with the domain and hosting.</p>
         <p>
-          <a class="support-btn" data-link="coffee" target="_blank" rel="noopener">Buy me a coffee</a>
+          <a class="support-btn" href="https://ko-fi.com/avelouk" target="_blank" rel="noopener">Buy me a coffee</a>
         </p>
 
-        <h3 class="support-h">🎮 Official shops</h3>
-
-        <ul class="affiliate-list">
-          <li>
-            <a data-link="amazon" target="_blank" rel="sponsored noopener">
-              <strong>Amazon <span class="badge">AFFILIATE</span></strong>
-              <span>I may earn a small cut on any purchase you make after clicking this. Same price for you.</span>
-            </a>
-          </li>
-          <li class="official-store">
-            <a data-link="nicalis" target="_blank" rel="noopener">
-              <strong>Nicalis Store</strong>
-              <span>Official Isaac merch and games from the publisher.</span>
-            </a>
-          </li>
-          <li class="official-store">
-            <a data-link="mewgenics" target="_blank" rel="noopener">
-              <strong>Mewgenics on Steam</strong>
-              <span>No commission for me - just the game.</span>
-            </a>
-          </li>
-        </ul>
+        <h3 class="support-h">📢 Ads</h3>
+        <p>
+          There are now a few ads on the site to help cover the expenses: a small one in the
+          corner, and occasionally a full-screen one you can close right away. Never between hints,
+          never during a guess. If one ever blocks the puzzle, use the
+          <strong>Report a problem</strong> button and I'll fix it.
+        </p>
 
         <h3 class="support-h">📜 Fine print</h3>
         <ul class="disclaimer-list">
@@ -83,7 +69,7 @@
             Fan project, not affiliated with Edmund McMillen, Nicalis, or official
             <em>Binding of Isaac</em>.
           </li>
-          <li>No ads or annoying stuff inside the puzzle itself.</li>
+          <li>No paid features, ever. Everything in the game is free for everyone.</li>
         </ul>
       </div>
 
@@ -92,30 +78,5 @@
       </div>
     </div>
 
-    <script>
-      // Empty string = "coming soon" (disabled styling).
-      const SUPPORT_LINKS = {
-        coffee: "https://ko-fi.com/avelouk",
-        amazon: "https://amzn.to/4u3Nod6",
-        nicalis: "https://store.nicalis.com/collections/the-binding-of-isaac",
-        mewgenics: "https://store.steampowered.com/app/686060/Mewgenics/",
-      };
-
-      for (const [key, url] of Object.entries(SUPPORT_LINKS)) {
-        const el = document.querySelector(`[data-link="${key}"]`);
-        if (!el) continue;
-        if (url) {
-          el.setAttribute("href", url);
-        } else {
-          el.classList.add("disabled");
-          el.setAttribute("aria-disabled", "true");
-          el.removeAttribute("target");
-          el.removeAttribute("rel");
-          el.title = "Coming soon — link not yet configured";
-          const badge = el.querySelector(".badge");
-          if (badge) badge.textContent = "SOON";
-        }
-      }
-    </script>
   </body>
 </html>

@@ -1025,66 +1025,6 @@ body::before {
   transform: translateY(2px);
   box-shadow: 0 1px 0 var(--ink);
 }
-.support-btn.disabled {
-  background: #b8a890;
-  color: #ece0c6;
-  cursor: not-allowed;
-  box-shadow: 0 3px 0 var(--ink-soft);
-  pointer-events: none;
-}
-
-.affiliate-list {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.affiliate-list a {
-  display: block;
-  padding: 12px 14px;
-  background: #fbf5e6;
-  border: 1px solid #e2d5b8;
-  border-left: 4px solid var(--gold);
-  border-radius: 3px;
-  color: var(--ink);
-  text-decoration: none;
-  transition: all 0.15s;
-}
-.affiliate-list a:hover {
-  border-left-color: var(--blood);
-  background: #fffaee;
-  transform: translateX(2px);
-}
-.affiliate-list a.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-  border-left-color: #d8c9ac;
-}
-.affiliate-list li.official-store a {
-  border-left-color: #7a8fa3;
-}
-.affiliate-list li.official-store a:hover {
-  border-left-color: #5a6d80;
-}
-.affiliate-list strong {
-  display: block;
-  font-family: "VT323", monospace;
-  font-size: 18px;
-  letter-spacing: 1px;
-  color: var(--ink);
-  margin-bottom: 3px;
-}
-/* :not(.badge) keeps this description style off badges, which the global
-   .badge rule below would otherwise lose to on specificity. */
-.affiliate-list span:not(.badge) {
-  display: block;
-  font-size: 13px;
-  color: var(--ink-soft);
-  line-height: 1.45;
-}
 .badge {
   display: inline-block;
   font-family: "VT323", monospace;
@@ -1163,6 +1103,4 @@ body::before {
   .support-h { font-size: 18px; letter-spacing: 1px; padding-top: 16px; margin-top: 20px; }
   .support-lede { font-size: 14px; }
   .iconbtn.back-link { padding: 0 10px; font-size: 14px; }
-  .affiliate-list strong { font-size: 16px; }
-  .affiliate-list span { font-size: 12px; }
 }

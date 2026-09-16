@@ -133,5 +133,14 @@
     <div id="modal-root"></div>
 
     <script type="module" src="/src/main.ts"></script>
+    <!-- TinyAdz. Placement and formats are decided in their dashboard, not here.
+         Test mode (demo ads) comes from VITE_ADS_TEST_MODE, defaulted in
+         vite.config.ts: "true" under `vite dev`, "false" in a production build. -->
+    <script
+      src="https://cdn.apitiny.net/scripts/v2.0/main.js"
+      data-site-id="6aa9e567f5d847fbb532d6c6"
+      data-test-mode="%VITE_ADS_TEST_MODE%"
+      async
+    ></script>
   </body>
 </html>
